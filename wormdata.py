@@ -336,6 +336,7 @@ class WormData:
     """Plot trajectories with positions color coded according to discrete ids"""
   
     data = self.data(label = ['x', 'y'], stage = stage, valid = valid);
+    
     uids = np.unique(ids);
     
     if color is all:
