@@ -16,6 +16,8 @@ import numpy as np
 import matplotlib.pyplot as plt;
 import matplotlib.cm as cm;
 import matplotlib.patches as mpatches;
+
+import scipy
 import scipy.io as io
 
 from utils import printProgress
@@ -58,6 +60,33 @@ def calcDiff(dists, diffs, i):
         diffs[i,:] = np.array(stats.linregress(np.log(range(1,dists.shape[1]+1)),np.log(dists[i,:])));
       except:
         diffs[i,:] = np.NaN;
+
+
+
+
+def calcEntropy(br,i):          
+      n = br.shape[1]+1;
+      #build local connectivity matrix on distance thresholding
+      mat = np.zeros((n,n), dtype = bool);
+      for j in range(n-1):
+        mat[j,j+1:] = br[i-j,j:][::-1];
+      mat = mat + mat.T;
+      np.fill_diagonal(mat, 1);        
+      #print mat;
+      
+      #calcualte number of covering balls
+      e = 0;
+      while mat.shape[0] > 0:
+        deg = np.sum(mat, axis = 0);
+        #print 'deg', deg
+        mi = np.argmax(deg);
+        #print 'max i = %d' % mi;
+        mi = mat[mi,:];
+        mat = mat[:,~mi][~mi,:];
+        #print 'mat: ', mat
+        #print '-------'
+        e += 1;
+      return e;
 
 
 
@@ -115,9 +144,10 @@ class WormData:
   def __repr__(self):
     return self.__str__();
      
-  def length(self):
+  def length(self, label = 0, stage = all, valid = False):
     """Length of data points in each entry"""
-    return self._data.shape[0];
+    data = self.data(label = label, stage = stage, valid = valid)
+    return data.shape[0];
     
   def wid(self):
     """Worm id"""
@@ -463,11 +493,13 @@ class WormData:
     
     return angc;
   
+  
   def calculateRotations(self, n = 10, offset = 0, stage = all, valid = False):
     """Calculate accumulated absolute rotation of trajectories"""
 
     ang = self.calculateAngles(n = 1, offset = 0, stage = stage, valid = valid);
     return self._accumulate(np.abs(ang)[:,0], n = n, offset = offset);
+  
   
   def calculateDiffusionParameter(self, n = 20, offset = 0, stage = all, valid = False, distances = None, p0 = None, parallel = True):
     """Fits a x**g onto the time evolution of distances"""
@@ -503,8 +535,76 @@ class WormData:
     
     return diff;
     
+  def calculatePathEntropy(self, radius, n = 20, offset = 0, stage = all, valid = False):
+    """Calculates path entropy of the trajectories time evolution"""
+    
+    import scipy.spatial 
+    #from joblib import Parallel, delayed, cpu_count
+    #import multiprocessing
+    #from parallel_tools import createSharedNumpyArray
+    #import ctypes
+    
+    #for each point caluclate distances to n-1 previous positions
+    data = self.data(label = ['x', 'y'], stage = stage, valid = valid);
+    nd = data.shape[0];
+    
+    dists = np.zeros((nd,n-1)); # exclude self-distance = 0 -> n-1 distances for path of length n
+    for i in range(n-1, nd):    # distances from not i -> (i-(n-1), i-(n-1)+1, ... i-1)
+        if i % 1000 == 0:
+          print '%d / %d' % (i, nd);
+        dists[i:i+1,:] = scipy.spatial.distance.cdist(data[i:i+1,:],data[i-n+1:i,:]);
+    for i in range(1,n-1):      # fill remaining distances
+      dists[i,:] = np.nan;
+      dists[i:i+1,n-1-i:n-1] = scipy.spatial.distance.cdist(data[i:i+1,:],data[0:i,:]);
+    dists[0,:] = np.nan;
+    #print dists;
 
-
+    # calculate number of neighbours
+    
+    # for the path of length n calculate entropy: min number of balls of radius r centered at positions convering the path
+    if not isinstance(radius, list):
+      radius = [radius];
+    nr = len(radius);
+    
+    entropies = np.zeros((nd, nr))
+    #br = createSharedNumpyArray(dists.shape, ctypes.c_double);
+    for ri,r in enumerate(radius):
+      br = dists < r;
+      #print br
+      #br_shared = multiprocessing.Array(br);
+      
+      #entropies[n-1:,ri] = Parallel(n_jobs = cpu_count(), verbose = 5)(delayed(calcEntropy)(br, i) for i in range(n-1,nd));
+      for i in range(n-1, nd): # loop over different radii 
+        if i % 1000 == 0:
+          print '%d / %d' % (i, nd);
+          
+        #build local connectivity matrix on distance thresholding
+        mat = np.zeros((n,n), dtype = bool);
+        for j in range(n-1):
+          mat[j,j+1:] = br[i-j,j:][::-1];
+        mat = mat + mat.T;
+        np.fill_diagonal(mat, 1);        
+        #print mat;
+        
+        #calcualte number of covering balls
+        e = 0;
+        while mat.shape[0] > 0:
+          deg = np.sum(mat, axis = 0);
+          #print 'deg', deg
+          mi = np.argmax(deg);
+          #print 'max i = %d' % mi;
+          mi = mat[mi,:];
+          mat = mat[:,~mi][~mi,:];
+          #print 'mat: ', mat
+          #print '-------'
+          e += 1;
+        
+        entropies[i,ri] = e;
+    
+    entropies[:n-1,:] = np.nan;
+    return entropies;
+  
+  
   def calculateConvexHullParameter(self, n = 20, offset = 0, stage = all, valid = False):
     """Calculates convex hull derived parameters on the trajectories time evolution"""
     pass

@@ -11,30 +11,27 @@ import shutil
 import os
 import numpy as np
 
+
+
+import multiprocessing
+import ctypes
+
+
+def createSharedNumpyArray(dimensions, ctype = ctypes.c_double):
+  # create array in shared memory segment
+  shared_array_base = multiprocessing.RawArray(ctype, np.prod(dimensions))
+
+  # convert to numpy array vie ctypeslib
+  shared_array = np.ctypeslib.as_array(shared_array_base)
+
+  return shared_array.reshape(dimensions);
+
+
+
+
+
 from joblib import Parallel, delayed
 from joblib import load, dump, cpu_count
-
-
-##make methods pickable
-#def _pickle_method(method):
-#  func_name = method.im_func.__name__
-#  obj = method.im_self
-#  cls = method.im_class
-#  return _unpickle_method, (func_name, obj, cls)
-#
-#def _unpickle_method(func_name, obj, cls):
-#  for cls in cls.mro():
-#    try:
-#      func = cls.__dict__[func_name]
-#    except KeyError:
-#      pass
-#    else:
-#      break
-#  return func.__get__(obj, cls)
-#
-#import copy_reg
-#import types
-#copy_reg.pickle(types.MethodType, _pickle_method, _unpickle_method)
 
 
 
@@ -87,3 +84,27 @@ def parallelIterateOnMemMap(function, data, result, iterations, moveTo = None, c
           print("Failed to delete: " + folder)
     
     return result
+    
+    
+    
+    ##make methods pickable
+#def _pickle_method(method):
+#  func_name = method.im_func.__name__
+#  obj = method.im_self
+#  cls = method.im_class
+#  return _unpickle_method, (func_name, obj, cls)
+#
+#def _unpickle_method(func_name, obj, cls):
+#  for cls in cls.mro():
+#    try:
+#      func = cls.__dict__[func_name]
+#    except KeyError:
+#      pass
+#    else:
+#      break
+#  return func.__get__(obj, cls)
+#
+#import copy_reg
+#import types
+#copy_reg.pickle(types.MethodType, _pickle_method, _unpickle_method)
+    
