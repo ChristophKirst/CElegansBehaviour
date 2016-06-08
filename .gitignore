@@ -15,4 +15,5 @@ Figures
 
 # pyc files
 *.pyc
+*.npy
 
