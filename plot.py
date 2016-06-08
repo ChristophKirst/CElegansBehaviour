@@ -1,54 +1,22 @@
 """
-Base Data Class for C-elegans Worm Data
+Module handling visualization of data and analysis results
 
+Long Term Behaviour Analysis of C-elegans
 
+Experimental Data:
+Shay Stern, Bargman lab, The Rockefeller University 2016
 """
-
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
 __author__ = 'Christoph Kirst <ckirst@rockefeller.edu>'
 __docformat__ = 'rest'
+
 
 import os
 import numpy as np
 import scipy.io
 
-import experiment as exp
+import experiment 
 import tags
-
-class WormData:
-  """Base Class to handle worm data"""
-  
-  def __init__(self, strain = 'n2', wid = 0, stage = all, label = all, 
-               valid_only = False, replace_invalid = None, memmap = 'r'):
-    self.strain = strain;
-    self.wid = wid;
-    self.stage = stage;
-    self.label = label;
-    self.valid_only = valid_only;
-    self.replace_invalid = replace_invalid;
-    self.memmap = memmap;
-  
-  def data(self):
-    """Returns worm data as numpy array"""
-    return np.array(self.load());
-  
-  def load(self):
-    """Returns worm data as memmap"""
-    return exp.load(strain = self.strain, wid = self.wid, stage = self.stage, label = self.label, 
-                    valid_only = self.valid_only, replace_invalid = self.replace_invalid, memmap = self.memmap);
-  
-  def analyze(self, analysis, tags = None, redo = False, **kwargs):
-    """Analyses the data using a specified analysis routine"""
-    return tags.getAnalysis(analysis, self, tags = tags, redo = redo, mmap_mode = 'r+', **kwargs):)
-    
-    
-  def   
-
-
-
-
-
-
 
 
 

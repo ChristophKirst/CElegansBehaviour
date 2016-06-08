@@ -79,7 +79,7 @@ figdir  = os.path.join(datadir, 'Figures');
 
 reload(wd)
 
-wid = 11;
+wid = 71;
 XYwdata = XYdata[wid].copy();
 w = wd.WormData(XYwdata[:,0:2], stage = XYwdata[:,-1], valid = XYwdata[:,0] != 1, label = ('x', 'y'), wid = wid);
 w.replaceInvalid();
@@ -95,7 +95,7 @@ rads = [0.1, 0.5, 1, 2]
 npath = 10;
 pe = w.calculatePathEntropy(radius = rads, n = npath)
 
-np.save("path_entropy.npy", pe);
+np.save("w%d_path_entropy_n%d.npy" % (wid, npath), pe);
 
 
 plt.clf();
@@ -114,3 +114,42 @@ for i in range(nr):
   plt.hist(rn(pe[:,i]))
   plt.title('path entropy radius = %f' % rads[i])
 
+
+#nr = pe.shape[1];
+#for i in range(1): #range(nr):
+#  plt.figure(100+i); plt.clf();
+#  w.plotDataColor(data = all, c = pe[:,i]);
+#  plt.title('path entropy radius = %f' % rads[i])
+
+
+rots = w.calculateRotations(n=151);
+
+delays = [0, 5, 10, 100, 150];
+n_delays = len(delays);
+n2_delays = int(np.ceil(n_delays/2.))
+
+for j,r in enumerate(rads):
+  fig, axs = plt.subplots(2, n2_delays);
+  for i,d in enumerate(delays):
+    axs.flat[i].hexbin(pe[:,j], rots[:,d]);
+    axs.flat[i].set_title("w=%d d=%d radius=%f" % (wid,d,r));
+
+figname = os.path.join(figdir, 'distances_rotations_wall_s%d.png' % (s))
+fig.savefig(figname, bbox_inches = 'tight')
+
+
+rads = [0.1, 0.5, 1, 2]
+npath = 100;
+pe2 = w.calculatePathEntropy(radius = rads, n = npath)
+
+np.save("w%d_path_entropy_n%d.npy" % (wid, npath), pe2);
+
+
+for j,r in enumerate(rads):
+  fig, axs = plt.subplots(2, n2_delays);
+  for i,d in enumerate(delays):
+    axs.flat[i].hexbin(pe2[:,j], rots[:,d]);
+    axs.flat[i].set_title("w=%d d=%d radius=%f" % (wid,d,r));
+
+figname = os.path.join(figdir, 'distances_rotations_wall_s%d.png' % (s))
+fig.savefig(figname, bbox_inches = 'tight')

@@ -31,15 +31,42 @@ import wormdata as wd;
 reload(wd)
 
 basedir = '/home/ckirst/Science/Projects/CElegansBehaviour/';
-filename = os.path.join(basedir, 'Experiment/individuals_N2_X_Y.mat')
+filename = os.path.join(basedir, 'Experiment/n2_individuals_X_Y.mat')
 
 data = io.loadmat(filename);
 XYdata = data['individual_X_Y'][0];
+
+
+
 
 print XYdata.shape
 print XYdata[0].shape  
 
 nworms = XYdata.shape[0];
+
+
+
+
+#find distribution of steps for single worm
+wid = 71;
+
+XYwdata = XYdata[wid].copy();
+w = wd.WormData(XYwdata[:,0:2], stage = XYwdata[:,-1], valid = XYwdata[:,0] != 1, label = ('x', 'y'), wid = wid);
+w.replaceInvalid();
+  
+  s = [w.length(stage = s) for s in stages];
+
+
+
+
+
+
+
+
+
+
+
+
 
 stages = [1,2,3,4,5];
 #stages = np.unique(w.stage());

@@ -1,7 +1,10 @@
 """
 Base Data Class for C-elegans Worm Data
 
+Long Term Behaviour Analysis of C-elegans
 
+Experimental Data: 
+Shay Stern, Bargman lab, The Rockefeller University 2016
 """
 
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
@@ -10,53 +13,99 @@ __docformat__ = 'rest'
 
 import os
 import numpy as np
-import scipy.io
+import matplotlib.pyplot as plt;
+import matplotlib.cm as cm;
+import matplotlib.patches as mpatches;
 
-import experiment as exp
-import tags
+import scipy
+import scipy.io as io
+
+from utils import printProgress
+
+from parallel_tools import parallelIterateOnMemMap
+
+from scipy import stats
+
+
+def shiftData(data, s, reverse = True, nan = -1):
+  s = min(max(int(s),0), data.shape[0]);
+  if s == 0:
+    return data;
+  
+  ds = np.zeros_like(data);  
+  if reverse:
+      ds[:-s,...] = data[s:,...];
+      ds[-s:,...] = np.NaN;
+  else:
+    ds[s:,...] = data[:-s,...];
+    ds[:s,...] = np.NaN;
+    
+  if nan is not None:
+    ds[np.isnan(ds)] = nan;
+  
+  return ds;
+
+
+
+#helper used for parallel processing
+def calcDiff(dists, diffs, i):
+    if i % 100 == 0:
+      print("[Worker %d] processing iteration %d" % (os.getpid(), i))
+    
+    if np.any(np.isnan(dists[i,:])):
+      diffs[i,:] = np.NaN;
+    else:
+      try:
+        #slope, intercept, r_value, p_value, std_err = stats.linregress(x,y)
+        diffs[i,:] = np.array(stats.linregress(np.log(range(1,dists.shape[1]+1)),np.log(dists[i,:])));
+      except:
+        diffs[i,:] = np.NaN;
+
+
+
+
+def calcEntropy(br,i):          
+      n = br.shape[1]+1;
+      #build local connectivity matrix on distance thresholding
+      mat = np.zeros((n,n), dtype = bool);
+      for j in range(n-1):
+        mat[j,j+1:] = br[i-j,j:][::-1];
+      mat = mat + mat.T;
+      np.fill_diagonal(mat, 1);        
+      #print mat;
+      
+      #calcualte number of covering balls
+      e = 0;
+      while mat.shape[0] > 0:
+        deg = np.sum(mat, axis = 0);
+        #print 'deg', deg
+        mi = np.argmax(deg);
+        #print 'max i = %d' % mi;
+        mi = mat[mi,:];
+        mat = mat[:,~mi][~mi,:];
+        #print 'mat: ', mat
+        #print '-------'
+        e += 1;
+      return e;
+
+
+
+#
+#class Experiment:
+#  """Base class for a set of worm traces"""
+#  
+#  
+#  def __init__(self, filename = None, name = None):
+#    """Constructor"""
+#    
+#    if filename is not None:
+#      data = 
+#    self.data = {};
+#    self.id = id;
+
 
 class WormData:
-  """Base Class to handle worm data"""
-  
-  def __init__(self, strain = 'n2', wid = 0, stage = all, label = all, 
-               valid_only = False, replace_invalid = None, memmap = 'r'):
-    self.strain = strain;
-    self.wid = wid;
-    self.stage = stage;
-    self.label = label;
-    self.valid_only = valid_only;
-    self.replace_invalid = replace_invalid;
-    self.memmap = memmap;
-  
-  def data(self):
-    """Returns worm data as numpy array"""
-    return np.array(self.load());
-  
-  def load(self):
-    """Returns worm data as memmap"""
-    return exp.load(strain = self.strain, wid = self.wid, stage = self.stage, label = self.label, 
-                    valid_only = self.valid_only, replace_invalid = self.replace_invalid, memmap = self.memmap);
-  
-  def analyze(self, analysis, tags = None, redo = False, **kwargs):
-    """Analyses the data using a specified analysis routine"""
-    return tags.getAnalysis(analysis, self, tags = tags, redo = redo, mmap_mode = 'r+', **kwargs):)
-    
-    
-  def   
-
-
-
-
-
-
-
-
-
-
-
-
-class WormData:
-  """Base class for single worm data trace"""
+  """Base class for Worm Data, single individuum"""
   
   def __init__(self, data, label = None, stage = None, valid = all, wid = None):
     """Constructor"""
@@ -181,7 +230,20 @@ class WormData:
       else:
         return self._data[sids,:][:,lids];
      
-
+  ############################################################################
+  ## Util 
+  ############################################################################      
+  
+  def replaceInvalid(self, replace = np.NaN):
+    """Replace invalid data points with specified values"""
+    self._data[np.logical_not(self._valid), :] = replace;
+    return;
+    
+    
+  def stageIndex(self, stage = all, valid = False):
+    """Returns indices of developmental stage changes"""
+    
+    return np.argwhere(np.diff(self.stage(stage = stage, valid = valid)));  
     
   ############################################################################
   ## Plotting 
