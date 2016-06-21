@@ -2,12 +2,12 @@
 """
 Experiment
 
-Module specifying the experimental data structures for 
+Module specifying the experimental data structures for
 
 Long Term Behaviour Analysis of C-elegans
 
 Experimental Data:
-Shay Stern, Cori Bargman Lab, The Rockefeller University 2016
+Shay Stern, C. Bargman Lab, The Rockefeller University 2016
 
 """
 __author__  = 'Christoph Kirst <ckirst@rockefeller.edu>'
@@ -39,62 +39,19 @@ def filename(strain = 'n2', dtype = 'xy', wid = all):
   else:
     wid = str(wid);
   
-  if dtype == 'xy':
-    fn = strain + '_' +  dtype + '_wid=' + wid + '.npy';
+  if dtype in ['xy', 'stage', 'img']:
+    fn = strain + '_' +  dtype + '_w=' + wid + '_s=all.npy';
     return os.path.join(experiment_directory, fn);
-  elif dtype == 'img':
-    fn = strain + '_' +  dtype + '_wid=' + wid + '.npy';
-    return os.path.join(experiment_directory, 'Images/' + fn);  
   else:
     raise RuntimeError('cannot determine data type %s' % dtype);
   
 
  
 ############################################################################
-### Data structure
+### Accessing data
 ############################################################################    
 
-## XY data
-
-labelpos= {'x' : 0, 'y' : 1, 'stage' : 2};
-
-def label_string(self, i = all):
-  """Returns string label of the data"""
-  if i is all:
-    return labelpos.keys();
-  else:
-    if isinstance(i, int):
-      for (k,v) in labelpos.items():
-        if i in np.array(v).flatten():
-          return k;
-    else:
-      l = [];
-      for (k,v) in labelpos.items():
-        for ii in i:
-          if i in np.array(v).flatten():
-            l.append(k);
-      return l;
-      
-def label_id(self, label = all):
-  """Return label ids of label given as strings or ids"""
-  
-  def makelab(lab):
-    if isinstance(lab, str):
-      return labelpos[lab];
-    else:
-      return lab;
-  
-  if label is all:
-    #return range(len(labeldict));
-    return range(2); # dont want stage indices 
-  else:
-    if isinstance(label, str) or isinstance(label, int):
-      return makelab(label);
-    else:
-      return np.array([makelab(l) for l in label]).flatten();
-
-
-def load(strain = 'n2', dtype = 'xy', wid = all, stage = all, label = all, valid_only = False, replace_invalid = None, memmap = 'r'):
+def load(strain = 'n2', dtype = 'xy', wid = all, stage = all, valid_only = False, replace_invalid = None, memmap = 'r'):
   fn = filename(strain = strain, dtype = dtype, wid = wid);
   if wid is all:
     wid = range(len(glob.glob(fn)));
@@ -102,22 +59,30 @@ def load(strain = 'n2', dtype = 'xy', wid = all, stage = all, label = all, valid
   wids = np.array([wid], dtype = int).flatten();
   
   if stage is all:
-    stage = [1,2,3,4,5];
-  stage = np.array([stage]).flatten();
+    stagel = [1,2,3,4,5];
+  else:
+    stagel = stage;
+  stagel = np.array([stagel]).flatten();
     
-  lids = label_id(label);
+  #lids = label_id(label);
   
   data = np.zeros(len(wids), dtype = 'O');
   for i,w in enumerate(wids):
     data[i] = np.load(filename(strain = strain, dtype = dtype, wid = w), mmap_mode = memmap);    
     
-    sids =  np.in1d(data[i][:, labelpos['stage']], stage);
+    if stage is not all:
+      sids = np.load(filename(strain = strain, dtype = 'stage', wid = w));
+      sids = np.in1d(sids, stage);
+    else:
+      sids = np.ones(data[i].shape[0], dtype = bool);
+    
     if valid_only is True:    
-      sids = np.logical_and(sids, data[i][:, labelpos['x']] != np.nan);
-    data[i] = data[i][sids,:][:,lids];
+      sids = np.logical_and(sids, np.sum(np.isnan(data[i]), axis = 1));
+    
+    data[i] = data[i][sids,:];
     
     if valid_only is False and replace_invalid is not None:        
-      iids = data[i][:, labelpos['x']] == np.nan;
+      iids = np.sum(np.isnan(data[i]), axis = 1);
       data[i][iids,:] = replace_invalid;
   
   if isinstance(wid, int):

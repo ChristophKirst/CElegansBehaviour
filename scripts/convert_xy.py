@@ -21,11 +21,12 @@ files = ['n2_xy_n=109', 'cat-2_xy_n=48', 'tph-1_xy_n=48']
 for f in files:
   basedir = '/home/ckirst/Science/Projects/CElegansBehaviour/';
   filename = os.path.join(basedir, 'Experiment/%s.mat' % f)
-  f = f.split('n=')[0];
+  f = f.split('_')[0];
   
-  filenamenumpy = os.path.join(basedir, 'Experiment/Data/%swid=%s.npy' % (f, '%d'));
+  xyfile = os.path.join(basedir, 'Experiment/Data/%s_xy_w=%s_s=all.npy' % (f, '%d'));
+  stagefile = os.path.join(basedir, 'Experiment/Data/%s_stage_w=%s_s=all.npy' % (f, '%d'));
   
-  print 'converting %s to %s' % (filename, filenamenumpy)
+  print 'converting %s to %s' % (filename, xyfile)
 
   data = io.loadmat(filename);
   XYdata = data['individual_X_Y'][0];
@@ -38,7 +39,7 @@ for f in files:
     XYdata[i][iids,1] = np.nan;
     
     #write data
-    np.save(filenamenumpy % i, XYdata[i]);
-  
+    np.save(xyfile % i, XYdata[i][:,:-1]);
+    np.save(stagefile % i, XYdata[i][:,-1]);
 
 

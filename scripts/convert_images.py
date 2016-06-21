@@ -65,8 +65,8 @@ startindex = [561, 135];
 fileformat = ['/data/Science/Projects/CElegansBehaviour/Experiment/CAM814A4/shortCAM814A4CAM814_2015-11-20-174505-%04d.mat',
               '/data/Science/Projects/CElegansBehaviour/Experiment/CAM819A3/shortCAM819A3CAM819_2015-09-14-175453-%04d.mat'];
 
-filesave = ['/data/Science/Projects/CElegansBehaviour/Experiment/Data/Images/n2_img_wid=80.npy',
-            '/data/Science/Projects/CElegansBehaviour/Experiment/Data/Images/n2_img_wid=96.npy']
+filesave = ['/data/Science/Projects/CElegansBehaviour/Experiment/Data/Images/n2_img_w=80_s=all.npy',
+            '/data/Science/Projects/CElegansBehaviour/Experiment/Data/Images/n2_img_w=96_s=all.npy']
 
 # find the number of data points
 

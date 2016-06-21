@@ -2,7 +2,10 @@
 """
 Analysis module
 
-Module to handle reading and writing of analysis results to disk using tags
+Module to manage reading and writing of analysis results to disk using tags
+This module allows to analyze data in a systematic and parallel way, storing
+the results in specific tagged files that are accessible as memmory maps
+
 """
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
 __author__ = 'Christoph Kirst <ckirst@rockefeller.edu>'
@@ -61,10 +64,11 @@ class Analysis:
     tagfunc = tag_from_function(function = self.function,  with_default_parameter = self.with_default_parameter, parameter = self.parameter, **kwargs);
     
     return tag_join(tag, tagfunc);
-
-     
-  def run(self, data = None):
+  
+  def run(self, data = None, *args, **kwargs):
     """Run the analysis"""
+    param = dict_join(self.parameter, kwargs);
+    return function(data, *args, **param);
     
 
 
@@ -72,6 +76,13 @@ class Analysis:
 ############################################################################
 ### Tags
 ############################################################################    
+
+def stra(s):
+  """Convert values to string including special built in symbols"""
+  if s is all:
+    return 'all'
+  else:
+    return str(s);
 
 def tag_join(tag, tag2, join = '_'):
   """Joins two tag expressions"""
@@ -84,7 +95,8 @@ def tag_join(tag, tag2, join = '_'):
   
   return tag;
 
-def dict_to_string(head = None, **args):
+
+def dict_to_string(parameter = None, head = None):
     """Convert dictionary in to a formatted string
     
     Arguments:
@@ -98,20 +110,21 @@ def dict_to_string(head = None, **args):
         tag = '';
     else:
         tag = head;
-        
-    keys = args.keys();
-    vals = args.values();
     
-    for i in range(len(keys)):
-      tag = tag_join(tag, keys[i] + '=' + str(vals[i]));
+    if isinstance(parameter, dict):
+      keys = parameter.keys();
+      vals = parameter.values();
     
-    return s;
+      for i in range(len(keys)):
+        tag = tag_join(tag, keys[i] + '=' + stra(vals[i]));
+    
+    return tag;
         
         
 def dict_join(*args):
     """Joins dictionaries in a consitent way
     
-    For multiple occurences of a key the  value is defined by the last key : value pair.
+    For multiple occurences of a key the  value is defined by the last occurence of the key : value pair.
     
     Arguments:
         *args: list of parameter dictonaries
@@ -120,15 +133,15 @@ def dict_join(*args):
         dict: the joined dictionary
     """
     
-    keyList = [x.keys() for x in args];
     n = len(args);
     
     keys = [];
     values = [];
     for i in range(n):
-        values = values + [args[i][k] for k in keyList[i] if k not in keys];
-        keys   = keys + [k for k in keyList[i] if k 
-        not in keys];
+      if isinstance(args[i], dict):
+        ks = args[i].keys();
+        values = values + [args[i][k] for k in ks if k not in keys];
+        keys   = keys + [k for k in ks if k not in keys];
     
     return OrderedDict(zip(keys, values));
 
@@ -197,7 +210,7 @@ def tag_from_function(function, with_default_parameter = True, parameter = None,
       tagpar = parameter + '_';
   else:
     if len(kwargs) > 0 or len(defparam) > 0:
-      tagpar = dict_to_string(dict_join(defargs, kwargs)) + '_';
+      tagpar = dict_to_string(dict_join(defparam, kwargs)) + '_';
     else:
       tagpar = '';
   
@@ -262,37 +275,113 @@ def tagfile(data = None, analysis = None, with_default_parameter = True, paramet
 ############################################################################    
 
 
-def analyze_data(data = None, analysis = None, parameter = None, tags = None, redo = False, overwrite = True, memmap = 'r+', **kwargs):
-  """Analyze the data and save under a tagged file name"""
+def analyze(data = None, analysis = None, parameter = None, tags = None, redo = False, overwrite = True, memmap = 'r+', **kwargs):
+  """Analyze the data and save under a tagged file name
+  
+  Arguments:
+    data (object, array, None): data to analyze
+    analysis (object, function, None): analysis function
+    parameter (dict or None): analysis parameter
+    tags (dict, str, or None): additional tag specifications
+    redo (bool): if True redo analysis even if results exists in a file
+    overwrite (bool): if True overwrite tagged file
+    memmap (str or None): return result as memmap, if 't' return tagged file name
+    **kwargs: additional parameter for the analysis overwriting parameter
+  
+  Returns:
+    array or memmap or file name: analysis results
+  
+  """
+  
   tn = tagfile(data = data, analysis = analysis, parameter = parameter, tags = tags, **kwargs);
-  if not redo and isFile(tn):
-    return numpy.load(tn, mmap_mode = memmap);
-  else:
-    if tags is None:
-      tags = dict();
-    tags = dictJoin(tags, kwargs);
-    result = analysis(wormdata, **tags);
-    if overwrite:
-      numpy.save(tn, result);
-    
-    if memmap is not None:
+  isfile = isFile(tn);
+  
+  if not redo and isfile: # load tagged file
+    if memmap == 't' or memmap == 'tag':
+      return tn;
+    else:
       return numpy.load(tn, mmap_mode = memmap);
+  
+  else: # do analysis
+    param = dict_join(parameter, kwargs);
+    
+    if isinstance(analysis, Analysis):
+      result = analysis.run(data, **param);
+    else:
+      result = analysis(data, **param);
+    
+    if overwrite or ~isfile:
+      numpy.save(tn, result);
+      
+      if memmap == 't' or memmap == 'tag':
+        return tn;
+      elif memmap is not None:
+        return numpy.load(tn, mmap_mode = memmap);
+      else:
+        return result;  
     else:
       return result;
-    
 
-def loadAnalysis(analysis, wormdata, tags = None, mmap_mode = 'r+', **kwargs):
+
+        
+def load(data = None, analysis = None, parameter = None, tags = None, memmap = 'r+', **kwargs):
+  """Load results from an analysis
+  
+  Arguments:  
+    data (object, array, None): data to analyze  
+    analysis (object, function, None): analysis function
+    parameter (dict or None): analysis parameter
+    tags (dict, str, or None): additional tag specifications
+    memmap (str or None): return result as memmap, if 't' return tagged file name
+    **kwargs: additional parameter for the analysis overwriting parameter
+  
+  Returns:
+    array or memmap: analysis results
+  """
   tn = tagfilename(wormdata = wormdata, analysis = analysis, tags = tags, **kwargs);
   if isFile(tn):
-    return numpy.load(tn, mmap_mode = mmap_mode);
+    if memmap == 't' or memmap == 'tag':
+      return tn;
+    else:
+      return numpy.load(tn, mmap_mode = mmap_mode);
   else:
     raise RuntimeError('cannot find analysis %s' % tn);
 
 
-def saveAnaysis(result, analysis, wormdata, tags = None, **kwargs):
-  tn = tagfilename(wormdata = wormdata, analysis = analysis, tags = tags, **kwargs);
-  if tags is None:
-    tags = dict();
-  tags = dictJoin(tags, kwargs);
-  numpy.save(tn, result);
-  return tn;
+
+def save(result, data = None, analysis = None, parameter = None, tags = None, overwrite = True, memmap = 't', **kwargs):
+  """Save results under tagged file corresponding to analysis and data
+  
+  Arguments:  
+    result (array): data to save
+    data (object, array or None): data supposedly being analyzed
+    analysis (object, function, None): analysis function
+    parameter (dict or None): analysis parameter
+    tags (dict, str, or None): additional tag specifications
+    **kwargs: additional parameter for the analysis overwriting parameter
+  
+  Returns:
+    str, memmap or array: tagged filename that stores the result, result array or memmap
+  """
+  
+  tn = tagfile(data = data, analysis = analysis, parameter = parameter, tags = tags, **kwargs);
+
+  if not overwrite and isFile(tn):
+    raise RuntimeWarning('Tagged file %s exists, results not saved to the file as overwrite=False' % tn);
+    return tn;
+  
+  else:
+    numpy.save(tn, result);
+  
+    if memmap == 't' or memmap == 'tag':
+      return tn;
+    elif memmap is not None:
+      return numpy.load(tn, mmap_mode = memmap);
+    else:
+      return result;  
+
+
+
+if __name__ == "__main__":
+  #some tests
+  pass
