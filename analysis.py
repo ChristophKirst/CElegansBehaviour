@@ -70,6 +70,9 @@ class Analysis:
     param = dict_join(self.parameter, kwargs);
     return function(data, *args, **param);
     
+  def __call__(self, data = None, *args, **kwargs):
+    return self.run(data, *args, **kwargs);
+    
 
 
 
@@ -305,10 +308,7 @@ def analyze(data = None, analysis = None, parameter = None, tags = None, redo = 
   else: # do analysis
     param = dict_join(parameter, kwargs);
     
-    if isinstance(analysis, Analysis):
-      result = analysis.run(data, **param);
-    else:
-      result = analysis(data, **param);
+    result = analysis(data, **param);
     
     if overwrite or ~isfile:
       numpy.save(tn, result);

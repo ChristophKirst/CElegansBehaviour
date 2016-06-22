@@ -77,6 +77,13 @@ Parallel(n_jobs = cpu_count())( delayed(analyse_shape_at_time)(t) for t in xrang
 
 analyse_shape_at_time(500000)
 
+analyse_shape_at_time(513477)
+
+i = 0;
+
+i+=1;
+analyse_shape_at_time(513466+i)
+
 analyse_shape_at_time(0)
 
 import matplotlib.cm as cm;

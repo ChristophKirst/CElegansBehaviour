@@ -16,10 +16,10 @@ import matplotlib.pyplot as plt
 
 
 from skimage.filters import threshold_otsu
+
 import scipy.ndimage.filters as filters
-
 from scipy.interpolate import splprep, splev
-
+from scipy.spatial.distance import cdist
 
 from signalprocessing.peak_detection import find_peaks
 
@@ -37,7 +37,10 @@ def analyse_shape(img, sigma = 1, threshold_level = 0.95, npts_contour = 100, np
    
   ### get shape
   cs = plt.contour(imgs, levels = [threshold_level * threshold_otsu(imgs)]);
-  pts = cs.collections[0].get_paths()[0].vertices
+  if len(cs.collections) > 0:
+    pts = cs.collections[0].get_paths()[0].vertices
+  else: #failed to detect worm
+    return np.zeros(2), np.zeros(2), np.zeros(2), 0, 0, np.zeros((2, npts_sides)), np.zeros((2, npts_sides)), np.zeros((2, npts_sides))
 
   # interpolation 
   cinterp, u = splprep(pts.T, u = None, s = smooth, per = 1) 
@@ -84,7 +87,8 @@ def analyse_shape(img, sigma = 1, threshold_level = 0.95, npts_contour = 100, np
   x2, y2 = splev(u2, cinterp, der = 0);
   
   # midline (simple)
-  xm = (x1 + x2) / 2; ym = (y1 + y2) / 2;
+  #xm = (x1 + x2) / 2; ym = (y1 + y2) / 2;
+  xm,ym,nu = find_midline(x1,y1,x2,y2);
   xym = np.vstack([xm,ym]);
   xymintp, u = splprep(xym, u = None, s = 1.0, per = 0);
   
@@ -120,9 +124,9 @@ def analyse_shape(img, sigma = 1, threshold_level = 0.95, npts_contour = 100, np
     plt.plot(x2,y2, 'y', linewidth= 4)
     plt.plot(xm,ym,'b')
 
-    # plot some segments for fun
+    # plot segments
     for i in range(len(xm)):
-        plt.plot([x1[i], x2[i]], [y1[i], y2[i]], 'm')
+        plt.plot([x1[i], x2[nu[i]]], [y1[i], y2[nu[i]]], 'm')
 
     #plot center
     plt.scatter(xc, yc, color = 'k')
@@ -166,4 +170,37 @@ def analyse_shape(img, sigma = 1, threshold_level = 0.95, npts_contour = 100, np
   line_right = np.vstack([x2, y2]);
   
   return pos_center, pos_head, pos_tail, curvature_mean, curvature_variation, line_center, line_left, line_right
+
+
+
+def find_midline(xl,yl, xr, yr, lookahead = 10, offset = 5):
+  """Finds the optimal midline given the side lines of a worm"""
+  n = xl.shape[0];
+  xm = np.zeros(n);
+  ym = np.zeros(n);
+  nu = np.zeros(n, dtype = int);
+  
+  #find the mapping that minimizes the distance between left and right sides  
+  for i in range(offset):
+    xm[i] = (xl[i] + xr[i])/2;
+    ym[i] = (yl[i] + yr[i])/2;
+    nu[i] = i;
     
+  j = offset; jm = min(j+lookahead, n);
+  for i in range(offset, n - offset):
+    #find closest point from acutal ref point
+    dists = cdist([[xl[i], yl[i]]], np.array([xr[j:jm], yr[j:jm]]).T);
+    k = dists.argmin();
+    
+    xm[i] = (xl[i] + xr[j+k])/2;
+    ym[i] = (yl[i] + yr[j+k])/2;
+    nu[i] = j+k;
+    
+    j = j + k; jm = min(j+lookahead, n);
+  
+  for i in range(n-offset, n):
+    xm[i] = (xl[i] + xr[i])/2;
+    ym[i] = (yl[i] + yr[i])/2;
+    nu[i] = i;
+  
+  return xm,ym,nu
