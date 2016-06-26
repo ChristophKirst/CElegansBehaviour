@@ -10,6 +10,8 @@ import numbers
 import cv2
 import scipy.ndimage as nd
 
+eps = np.finfo(float).eps
+
 def isnumber(x):
   return isinstance(x, numbers.Number);
 
@@ -25,13 +27,13 @@ class WormShape:
   def __init__(self, nseg = 20,  l = 2, theta = 0, width  = 9, x0 = 75, y0 = 75):
     if isnumber(l):
       l = np.ones(nseg) * l;
-    self.l = l;
+    self.l = l.copy();
     if isnumber(theta):
       theta = np.ones(nseg) * theta;
-    self.theta = theta;
+    self.theta = theta.copy();
     if isnumber(width):
       width = np.ones(nseg) * width;
-    self.width = width;
+    self.width = width.copy();
     self.x0 = x0; self.y0 = y0;
     self.nseg = nseg; # number of segments
   
@@ -119,66 +121,117 @@ class WormShape:
     return mask2phi(self.mask(size = size));
   
 
-  def error(self, delta_phi = 1.2):
+  def error(self, image, phi = None, delta_phi = 1.2, epsilon = 0.1, curvature = None):
+    
+    if phi is None:
+      phi = self.phi(size = image.shape);
     
     # regularized cruve information
     idx = np.flatnonzero(np.logical_and(phi <= delta_phi, phi >= -delta_phi))
 
-    if len(idx) > 0:
-            # Intermediate output
-            if display:
-                if np.mod(its, 50) == 0:
-                    print('iteration: {0}'.format(its))
-                    show_curve_and_phi(fig, I, phi, color)
-            else:
-                if np.mod(its, 10) == 0:
-                    print('iteration: {0}'.format(its))
-
-            # Find interior and exterior mean
-            upts = np.flatnonzero(phi <= 0)  # interior points
-            vpts = np.flatnonzero(phi > 0)  # exterior points
-            u = np.sum(I.flat[upts]) / (len(upts) + eps)  # interior mean
-            v = np.sum(I.flat[vpts]) / (len(vpts) + eps)  # exterior mean
-
-            # Force from image information
-            F = (I.flat[idx] - u)**2 - (I.flat[idx] - v)**2
-            # Force from curvature penalty
-            curvature = get_curvature(phi, idx)
-
-            # Gradient descent to minimize energy
-            dphidt = F / np.max(np.abs(F)) + alpha * curvature
-
-            # Maintain the CFL condition
-            dt = 0.45 / (np.max(np.abs(dphidt)) + eps)
-
-            # Evolve the curve
-            phi.flat[idx] += dt * dphidt
-
-            # Keep SDF smooth
-            phi = sussman(phi, 0.5)
-
-            new_mask = phi <= 0
-            c = convergence(prev_mask, new_mask, thresh, c)
-
-            if c <= 5:
-                its = its + 1
-                prev_mask = new_mask
-            else:
-                stop = True
-
-        else:
-            break
-
-    # Final output
-    if display:
-        show_curve_and_phi(fig, I, phi, color)
-        plt.savefig('levelset_end.png', bbox_inches='tight')
-
-    # Make mask from SDF
-    seg = phi <= 0  # Get mask from levelset
-
-    return seg, phi, its
+    if len(idx) == 0:
+      return 0;
     
+    # interior and exterior means
+    #upts = np.flatnonzero(phi <= 0)  # interior points
+    #vpts = np.flatnonzero(phi > 0)  # exterior points
+    #u = np.sum(image.flat[upts]) / (len(upts) + eps)  # interior mean
+    #v = np.sum(image.flat[vpts]) / (len(vpts) + eps)  # exterior mean
+
+    theta_in = 0.5 * (np.tanh(phi.flat[idx] / epsilon) + 1);
+    theta_out = 1 - theta_in;
+    
+    phi_in = phi.flat * theta_in;
+    phi_out = phi.flat * theta_out;
+    
+    mean_in = np.sum(phi_in) / (np.sum(theta_in) + eps); 
+    mean_out = np.sum(phi_out) / (np.sum(theta_out) + eps); 
+
+    # error from image information
+    error =  np.sum((theta_in * (image.flat[idx] - mean_in ))**2);
+    error += np.sum((theta_out *(image.flat[idx] - mean_out))**2);
+    
+    # error from curvature constraints
+    if curvature is not None:
+      c = get_curvature(phi, idx);
+      error += np.sum(np.abs(c));
+    
+    return error;
+    
+
+  def optimize(self, image):
+    import scipy.optimize as opt;
+    
+    ws = WormShape(nseg = self.nseg, l = self.l, theta = self.theta,
+                   width = self.width, x0 = self.x0, y0 = self.y0);
+    
+    def fun(x):
+      ws.l     = x[:self.nseg];
+      ws.theta = x[self.nseg:2*self.nseg];
+      ws.width = x[2*self.nseg:3*self.nseg];
+      ws.x0 = x[-2];
+      ws.y0 = x[-1];
+      return ws.error(image = image);
+    
+    x0 = np.hstack([self.l, self.theta, self.width, [self.x0, self.y0]]);
+    res = opt.minimize(fun, x0);
+    
+    return res;
+
+
+
+
+
+# Compute curvature
+def get_curvature(phi, idx):
+    dimy, dimx = phi.shape
+    yx = np.array([np.unravel_index(i, phi.shape) for i in idx])  # subscripts
+    y = yx[:, 0]
+    x = yx[:, 1]
+
+    # Get subscripts of neighbors
+    ym1 = y - 1
+    xm1 = x - 1
+    yp1 = y + 1
+    xp1 = x + 1
+
+    # Bounds checking
+    ym1[ym1 < 0] = 0
+    xm1[xm1 < 0] = 0
+    yp1[yp1 >= dimy] = dimy - 1
+    xp1[xp1 >= dimx] = dimx - 1
+
+    # Get indexes for 8 neighbors
+    idup = np.ravel_multi_index((yp1, x), phi.shape)
+    iddn = np.ravel_multi_index((ym1, x), phi.shape)
+    idlt = np.ravel_multi_index((y, xm1), phi.shape)
+    idrt = np.ravel_multi_index((y, xp1), phi.shape)
+    idul = np.ravel_multi_index((yp1, xm1), phi.shape)
+    idur = np.ravel_multi_index((yp1, xp1), phi.shape)
+    iddl = np.ravel_multi_index((ym1, xm1), phi.shape)
+    iddr = np.ravel_multi_index((ym1, xp1), phi.shape)
+
+    # Get central derivatives of SDF at x,y
+    phi_x = -phi.flat[idlt] + phi.flat[idrt]
+    phi_y = -phi.flat[iddn] + phi.flat[idup]
+    phi_xx = phi.flat[idlt] - 2 * phi.flat[idx] + phi.flat[idrt]
+    phi_yy = phi.flat[iddn] - 2 * phi.flat[idx] + phi.flat[idup]
+    phi_xy = 0.25 * (- phi.flat[iddl] - phi.flat[idur] +
+                     phi.flat[iddr] + phi.flat[idul])
+    phi_x2 = phi_x**2
+    phi_y2 = phi_y**2
+
+    # Compute curvature (Kappa)
+    curvature = ((phi_x2 * phi_yy + phi_y2 * phi_xx - 2 * phi_x * phi_y * phi_xy) /
+                 (phi_x2 + phi_y2 + eps) ** 1.5) * (phi_x2 + phi_y2) ** 0.5
+
+    return curvature
+    
+    
+    
+    
+    
+  
 if __name__ == "__main__":
   
   import matplotlib.pyplot as plt;

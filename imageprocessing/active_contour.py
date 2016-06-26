@@ -48,7 +48,7 @@ def chanvese(I, init_mask, max_its=200, alpha=0.2,
         plt.ion()
         fig, axes = plt.subplots(ncols=2)
         show_curve_and_phi(fig, I, phi, color)
-        plt.savefig('levelset_start.png', bbox_inches='tight')
+        #plt.savefig('levelset_start.png', bbox_inches='tight')
 
     # Main loop
     its = 0
@@ -108,7 +108,7 @@ def chanvese(I, init_mask, max_its=200, alpha=0.2,
     # Final output
     if display:
         show_curve_and_phi(fig, I, phi, color)
-        plt.savefig('levelset_end.png', bbox_inches='tight')
+        #plt.savefig('levelset_end.png', bbox_inches='tight')
 
     # Make mask from SDF
     seg = phi <= 0  # Get mask from levelset
