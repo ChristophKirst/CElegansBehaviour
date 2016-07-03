@@ -43,8 +43,6 @@ x, y= np.meshgrid(np.arange(Nx), np.arange(Ny));
 contour_generator = _contour.QuadContourGenerator(x, y, z.filled(), _mask, _corner_mask, nchunk)
 
 
-
-
 vertices = contour_generator.create_contour(level - 20)
 
 
