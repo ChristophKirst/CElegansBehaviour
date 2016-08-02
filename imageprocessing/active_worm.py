@@ -12,18 +12,18 @@ import cv2
 import scipy.ndimage as nd
 
 from scipy.spatial.distance import cdist
-from scipy.interpolate import splprep, splev
+from scipy.interpolate import splprep,splrep, splev
 
 eps = np.finfo(float).eps
 
-from scripts.analyse_wormshape import analyse_shape
+from scripts.analyse_wormshape_fail import analyse_shape
 
 
 
 class WormModel:
   """Class modeling the shape and posture of a worm"""
   
-  def __init__(self, npoints = 21, length = 40, theta = 0, width = None, position = [75, 75], orientation = 0):
+  def __init__(self, npoints = 21, length = 40, theta = 0, width = None, position = [75, 75], orientation = 0, valid = True):
     """Constructor of WormModel
     
     Arguments:
@@ -55,6 +55,8 @@ class WormModel:
     self.position = np.array(position);
     
     self.orientation = orientation;
+    
+    self.valid = valid;
   
   ############################################################################
   ### Constructors
@@ -187,7 +189,6 @@ class WormModel:
     t0 = ts[:-1, :];
     t1 = ts[1:,:];
     self.theta = np.arctan2(t0[:,0], t0[:,1]) - np.arctan2(t1[:,0], t1[:,1]);
-
     self.theta = np.mod(self.theta + np.pi, 2 * np.pi) - np.pi;
     
     #length
@@ -201,13 +202,36 @@ class WormModel:
     
   
   def from_image(self, image, sigma = 1, threshold_level = 0.95,
-                 npts_contour = 100, npts_sides = 21, smooth = 1.0, verbose = False):
+                 npts_contour = 100, npts_sides = 21, smooth = 1.0, verbose = False, save = False):
     shape = analyse_shape(image, sigma = sigma, threshold_level = threshold_level, 
                  npts_contour = npts_contour, npts_sides = npts_sides, 
-                 smooth = smooth, verbose = verbose, save = None);
+                 smooth = smooth, verbose = verbose, save = save);
     #print shape[-3].shape, shape[-2].shape, shape[-1].shape
-    self.from_lines(shape[-3], shape[-2], shape[-1]);
+    if shape[0]:
+      self.from_lines(shape[-3], shape[-2], shape[-1]);
+    else:
+      self.npoints = shape[-3].shape[0];
+      self.valid = False; #curled ->  for now treat as invalid
   
+  
+  def to_array(self):
+    if self.valid:
+      cl = self.center_line();
+      wd = self.width;
+      return np.hstack([cl[:,0], cl[:,1], wd]);
+    else:
+      return -1 * np.ones(self.npoints * 3);
+    
+  def from_array(self, array):
+    n = len(array)/3;
+    cl = np.vstack([array[0:n], array[n:2*n]]).T;
+    wd = array[2*n:];
+    if wd[0] == -1:
+      self.valid = False;
+      self.npoints = len(wd);
+    else:
+      self.from_center_line(cl, width = wd);
+      self.valid = True;
   
   ############################################################################
   ### Shape Properties 
@@ -266,71 +290,64 @@ class WormModel:
       array (nx2): points along center line
     """
     
-    n = self.npoints;
-    n2 = self.center_index();
-    l = self.length / (n-1);
+    center_line = self.center_line();
+    width = self.width;
     
-    xym = np.zeros((n, 2));
+    # resample  points
+    if npoints is not all and npoints != self.npoints:
+      if npoints % 2 != 1:
+        raise RuntimeWarning('WormModel: number of line points expected to be odd, adding a point!')
+        npoints += 1;    
+      center_line = resample_cruve(center_line, npoints);
+      width = resample_data(width, npoints);
+      ts = center_line[1:,:] - center_line[:-1,:];
+      t0 = ts[:-1, :];
+      t1 = ts[1:,:];
+      theta = np.arctan2(t0[:,0], t0[:,1]) - np.arctan2(t1[:,0], t1[:,1]);
+      theta = np.mod(theta + np.pi, 2 * np.pi) - np.pi;
+    else:
+      npoints = self.npoints;
+      theta = self.theta;
+    
+    n  = npoints;
+    n2 = (npoints-1)/2;
+    
     xyl = np.zeros((n, 2));
     xyr = np.zeros((n, 2));
     
-    xym[n2,:] = self.position;
-    
-    cos = np.cos(self.orientation);
-    sin = np.sin(self.orientation);
-    n0 = np.array([-sin, cos]);
-    xym[n2-1,:] = xym[n2,:] - n0 * l;    
-    n1 = n0.copy();
-
-    cos = np.cos(self.orientation + (np.pi + self.theta[n2-1])/2.0);
-    sin = np.sin(self.orientation + (np.pi + self.theta[n2-1])/2.0);
+    cos = np.cos(self.orientation + (np.pi + theta[n2-1])/2.0);
+    sin = np.sin(self.orientation + (np.pi + theta[n2-1])/2.0);
     t0 = np.array([-sin, cos]);    
-    c = xym[n2,:]; # + xym[n2-1,:])/2.0;
-    xyl[n2,:] = c - t0 * self.width[n2] / 2.0;
-    xyr[n2,:] = c + t0 * self.width[n2] / 2.0;
+    c = center_line[n2,:];
+    xyl[n2,:] = c - t0 * width[n2] / 2.0;
+    xyr[n2,:] = c + t0 * width[n2] / 2.0;
     t1 = t0.copy();
     
-    cos = np.cos(self.theta);
-    sin = np.sin(self.theta);
-    
-    thetaw = (np.hstack([0, self.theta]) + np.hstack([self.theta, 0]))/2.0;    
+    thetaw = (np.hstack([0, theta]) + np.hstack([theta, 0]))/2.0;    
     cosw = np.cos(thetaw);  
     sinw = np.sin(thetaw);
         
     for i in range(n2):
-      k = n2 + i; km1 = k - 1; k1 = k + 1;
-      n0 = np.array([cos[km1] * n0[0] - sin[km1] * n0[1], sin[km1] * n0[0] + cos[km1] * n0[1]]);
+      k = n2 + i; k1 = k + 1;
       t0 = np.array([cosw[k] * t0[0] - sinw[k] * t0[1], sinw[k] * t0[0] + cosw[k] * t0[1]]);
-      xym[k1,:] = xym[k,:] + n0 * l;
-      #print np.linalg.norm(t0);
-      
-      c = xym[k1,:]; # + xym[n2+i,:])/2.0;
-      xyl[k1,:] = c - t0 * self.width[k1] / 2.0;
-      xyr[k1,:] = c + t0 * self.width[k1] / 2.0;
+      c = center_line[k1,:];
+      xyl[k1,:] = c - t0 * width[k1] / 2.0;
+      xyr[k1,:] = c + t0 * width[k1] / 2.0;
     
     
     t1 = np.array([cosw[n2-1] * t1[0] + sinw[n2-1] * t1[1], - sinw[n2-1] * t1[0] + cosw[n2-1] * t1[1]]);
-    c = xym[n2-1,:];
-    xyl[n2-1,:] = c - t1 * self.width[n2-1] / 2.0;
-    xyr[n2-1,:] = c + t1 * self.width[n2-1] / 2.0;
+    c = center_line[n2-1,:];
+    xyl[n2-1,:] = c - t1 * width[n2-1] / 2.0;
+    xyr[n2-1,:] = c + t1 * width[n2-1] / 2.0;
         
     for i in range(n2-1):
       k = n2-2-i;
-      n1 = np.array([cos[k] * n1[0] + sin[k] * n1[1], - sin[k] * n1[0] + cos[k] * n1[1]]);
       t1 = np.array([cosw[k] * t1[0] + sinw[k] * t1[1], - sinw[k] * t1[0] + cosw[k] * t1[1]]);
-      xym[k,:] = xym[n2-1-i,:] - n1 * l;
-      
-      c = xym[k,:]; # + xym[n2-1-i,:])/2.0;
-      xyl[k,:] = c - t1 * self.width[k] / 2.0;
-      xyr[k,:] = c + t1 * self.width[k] / 2.0;
+      c = center_line[k,:]; # + xym[n2-1-i,:])/2.0;
+      xyl[k,:] = c - t1 * width[k] / 2.0;
+      xyr[k,:] = c + t1 * width[k] / 2.0;
     
-    
-    if npoints is not all and npoints != self.npoints:
-      xym = resample_cruve(xym, npoints);
-      xyl = resample_cruve(xyl, npoints);
-      xyr = resample_cruve(xyr, npoints);
-    
-    return xyl,xyr,xym
+    return xyl,xyr,center_line
    
   
   def polygon(self, npoints = all):
@@ -350,7 +367,8 @@ class WormModel:
       poly = resample_cruve(poly, npoints);
     
     return poly;
-
+  
+  
   def mask(self, size = (151, 151)):
     """Returns a binary mask for the worm shape
     
@@ -384,8 +402,69 @@ class WormModel:
       worm border is given by phi==0
     """
     
-    return mask2phi(self.mask(size = size));    
+    return mask2phi(self.mask(size = size));  
     
+      
+  def head(self):
+    cl = self.center_line();
+    return cl[0,:];
+  
+  def tail(self):
+    cl = self.center_line();
+    return cl[-1,:];
+    
+  def head_tail(self):
+    cl = self.center_line();
+    return cl[[0,-1],:];
+  
+  def measure(self):
+    """Measure some properties at the same time"""
+   
+    if self.valid:
+      cl = self.center_line();
+      n2 = self.center_index();
+      
+      # positions
+      pos_head = cl[0];
+      pos_tail = cl[1];
+      pos_center = cl[n2];
+      
+  
+      # head tail distance:
+      dist_head_tail = np.linalg.norm(pos_head-pos_tail)
+      dist_head_center = np.linalg.norm(pos_head-pos_center)
+      dist_tail_center = np.linalg.norm(pos_tail-pos_center)
+    
+      #average curvature
+      xymintp, u = splprep(cl.T, u = None, s = 1.0, per = 0);
+      dcx, dcy = splev(u, xymintp, der = 1)
+      d2cx, d2cy = splev(u, xymintp, der = 2)
+      ck = (dcx * d2cy - dcy * d2cx)/np.power(dcx**2 + dcy**2, 1.5);
+      curvature_mean = np.mean(ck);
+      curvature_variation = np.sum(np.abs(ck))
+      
+      curled = False;
+    else:
+      pos_head = np.array([0,0]);
+      pos_tail = pos_head;
+      pos_center = pos_head;
+      
+  
+      # head tail distance:
+      dist_head_tail = 0.0
+      dist_head_center = 0.0
+      dist_tail_center = 0.0
+    
+      #average curvature
+      curvature_mean = 0.0;
+      curvature_variation = 0.0
+      
+      curled = True;
+     
+    data = np.hstack([pos_head, pos_tail, pos_center, dist_head_tail, dist_head_center, dist_tail_center, curvature_mean, curvature_variation, curled]);
+    return data
+  
+  
   ############################################################################
   ### Worm shape deformations, Worm motions
   
@@ -511,7 +590,7 @@ class WormModel:
     #print self.theta.shape
   
   
-  def bend(self, bend, exponent = 40, head = True,):
+  def bend(self, bend, exponent = 4, head = True,):
     """Change curvature properties of the worm
     
     Arguments:
@@ -527,8 +606,7 @@ class WormModel:
     else:
       self.theta[n2:] += bend * np.exp(-exponent * np.linspace(1,0,n2-1));
   
-  
-  
+
 
   ############################################################################
   ### Error estimation and fitting
@@ -620,9 +698,58 @@ class WormModel:
       #plt.imshow(np.exp(-np.abs(phi) / 0.1) * grad)
     
     return error;
+    
+    
+    
+  def error_contour(self, phi, epsilon = 2.0, delta_phi = None):
+    """Error between worm shape and contour from image given implicitly by phi
+    
+    Arguments:
+      phi (array): implicit worm contour, if none calculated from actual shape
+      delta_phi (number): range of phi values to consider for error estimate
+      epsilon (number): refularization parameter for the step functions
+      curvature (bool): error due to curvature on phi
+    """
+  
+    phi2 = self.phi(size = phi.shape);
+    
+    if delta_phi is None:
+      error =  np.sum((np.tanh(phi / epsilon)-np.tanh(phi2 / epsilon))**2);
+    else:
+      idx = np.flatnonzero(np.logical_and(phi2 <= delta_phi, phi2 >= -delta_phi))
+      error =np.sum((np.tanh(phi[idx] / epsilon)-np.tanh(phi2[idx] / epsilon))**2);
+    
+    return error;
   
   
-  def optimize(self, image, maxiter = 30, debug = True, swarmsize = 100, nmodes = 3):
+  def error_center_line(self, image, npoints = all, order = 1, overlap = True):
+    """Error between worm center line and image
+    
+    Arguments:
+      image (array): gray scale image of worm
+    """
+    import shapely.geometry as geo
+    
+    if overlap:
+      xyl, xyr, cl = self.sides(npoints = npoints);
+      w = np.ones(npoints);
+      #plt.figure(141); plt.clf();
+      worm = geo.Polygon();
+      for i in range(npoints-1):
+        poly = geo.Polygon(np.array([xyl[i,:], xyr[i,:], xyr[i+1,:], xyl[i+1,:]]));
+        ovl = worm.intersection(poly).area;
+        tot = poly.area;
+        w[i+1] = 1 - ovl / tot;
+        worm = worm.union(poly);
+        
+      #print w
+      return np.sum(w * nd.map_coordinates(image.T, cl.T, order = order))
+    else:
+      cl = self.center_line(npoints = npoints);
+      return np.sum(nd.map_coordinates(image.T, cl.T, order = order))
+  
+  
+  def optimize2(self, image, maxiter = 30, debug = True, swarmsize = 100, nmodes = 3):
     #import scipy.optimize as opt;
     import pyswarm as pso;
     
@@ -676,6 +803,50 @@ class WormModel:
     return par;   
   
   
+  def optimize(self, image, maxiter = 30, debug = True, swarmsize = 100, nmodes = 3):
+    
+    import pyswarm as pso;
+    
+    ws = copy.deepcopy(self);
+    
+    def fun(par):
+      ws2 = copy.deepcopy(ws);
+      ws2.move_forward(par[0] * 10);
+      ws2.bend(par[1]/10., head = True, exponent = 4);
+      ws2.bend(par[2]/10., head = False, exponent = 4);
+      ws2.curve(par[3:-3]);
+      ws2.translate(par[-3:-1] * 10);
+      ws2.rotate(par[-1]/10.);      
+      return ws2.error_center_line(image = image, npoints = 2*self.npoints -1);
+    
+
+    lb = np.hstack([[-2, -2, -2], [-2 for i in range(nmodes)], [-1, -2]]);
+    ub = np.hstack([[2, 2, 2], [2 for i in range(nmodes)], [1, 2]]);
+     #lb = np.hstack([[-1, -1, -1], [-3 for i in range(nmodes)]]);
+    #ub = np.hstack([[ 1,  1,  1], [ 3 for i in range(nmodes)]])    
+    
+    par, fopt = pso.pso(fun, lb, ub, debug = debug, maxiter = maxiter, swarmsize = swarmsize)
+    
+    #import scipy.optimize as opt;
+    #def p(x):
+    #  print x;
+    #method = 'BFGS'; options = {'gtol': 1e-12, 'disp': True, 'eps' : 0.1}
+    #x0 = np.zeros(3 + nmodes + 0*3);
+    #res = opt.minimize(fun, x0, jac = False, method = method, options = options, callback = p)
+    #par = res['x'];    
+
+    self.move_forward(par[0] * 10);
+    self.bend(par[1]/10., head = True, exponent = 4);
+    self.bend(par[2]/10., head = False, exponent = 4);
+    self.curve(par[3:-3]);
+    self.translate(par[-3:-1] * 10);
+    self.rotate(par[-1]/10.);  
+    
+    return par;   
+    
+  
+  
+  
   def normals(self):
     """Returns the normal vectors at each reference point
     """
@@ -717,8 +888,10 @@ class WormModel:
     
     """
     
+    cl = self.center_line();
     ts = self.normals();    
     for i in range(self.npoints):
+      
       errors = np.zeros(samples);
       nd.map_coordinates(z, np.vstack((x,y)))
     
@@ -801,8 +974,8 @@ class WormModel:
   ############################################################################
   ### Visualization
   
-  def plot(self, image = None, ccolor = 'black', lcolor = 'green', rcolor = 'red', ax = None):
-    xyl, xyr, xym = self.sides();
+  def plot(self, image = None, npoints = all, ccolor = 'black', lcolor = 'green', rcolor = 'red', ax = None):
+    xyl, xyr, xym = self.sides(npoints = npoints);
     if ax is None:
       ax = plt.gca();
     
@@ -914,15 +1087,35 @@ def resample_cruve(points, n, smooth = 1.0, periodic = False, derivative = 0):
   
   cinterp, u = splprep(points.T, u = None, s = smooth, per = periodic);
   us = np.linspace(u.min(), u.max(), n)
-  x, y = splev(us, cinterp, der = derivative);
-  return np.vstack([x,y]).T;
+  curve = splev(us, cinterp, der = derivative);
+  return np.vstack(curve).T;
 
-
+def resample_data(data, n, smooth = 1.0, periodic = False, derivative = 0):
+  """Resample 1d data using n equidistant points
   
+  Arguments:
+    data (array): data points
+    npoints (int): number of points in equidistant resampling
+    smooth (number): smoothness factor
+    periodic (bool): if True assumes the curve is a closed curve
+  
+  Returns:
+    (array): resampled data points
+  """
+  
+  x = np.linspace(0, 1, data.shape[0]);
+  dinterp = splrep(x, data, s = smooth, per = periodic);
+  x2 = np.linspace(0, 1, n);
+  return splev(x2, dinterp, der = derivative)
+
+
+
+
+
+
 if __name__ == "__main__":
   
-  import matplotlib.pyplot as plt;
-  ws = WormShape();
+  ws = WormModel();
   mask = ws.mask();
   
   plt.figure(1); plt.clf();
