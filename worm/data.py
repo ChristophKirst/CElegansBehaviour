@@ -1,20 +1,21 @@
 """
 Base Data Class for C-elegans Worm Data
 
-
+Handles access to the experimental data set, extends base Data calss form the tagged analysis framework
 """
 
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
 __author__ = 'Christoph Kirst <ckirst@rockefeller.edu>'
 __docformat__ = 'rest'
 
-import os
-import numpy as np
+#import os
+#import numpy as np
 
-import experiment as exp
-import analysis
+import analysis.experiment as exp
+import analysis.analysis as als;
 
-class WormData(analysis.Data):
+
+class WormData(als.Data):
   """Base Class to handle worm data"""
   
   def __init__(self, name = None, strain = 'n2', dtype = 'xy', wid = 0, stage = all, 
@@ -41,23 +42,19 @@ class WormData(analysis.Data):
   
   def tag(self):
     """Tag for this data"""
+    
     tag = super(self.__class__, self).tag();
-    
-    tag = analysis.tag_join(tag, analysis.stra(self.strain));
-    
-    tag = analysis.tag_join(tag, analysis.stra(self.dtype));
-    
-    tag = analysis.tag_join(tag, 'w=%s' % analysis.stra(self.wid));   
-    
-    tag = analysis.tag_join(tag, 's=%s' % analysis.stra(self.stage));
-    
+    tag = als.tag_join(tag, als.stra(self.strain));
+    tag = als.tag_join(tag, als.stra(self.dtype));
+    tag = als.tag_join(tag, 'w=%s' % als.stra(self.wid));   
+    tag = als.tag_join(tag, 's=%s' % als.stra(self.stage));
     #tag = analysis.tag_join(tag, 'l=%s' % analysis.stra(self.label));    
 
     return tag;
 
   
   def __str__(self):
-    info = tuple([analysis.stra(x) for x in [self.strain, self.wid, self.stage, self.label]]);
+    info = tuple([als.stra(x) for x in [self.strain, self.wid, self.stage, self.label]]);
     return "WormData %s w%s s%s l%s" % info;
  
   def __repr__(self):

@@ -4,12 +4,12 @@ Experiment
 
 Module specifying the experimental data structures for
 
-Long Term Behaviour Analysis of C-elegans
+long term behavioural analysis of C-elegans
 
-Experimental Data:
+Experimental data:
 Shay Stern, C. Bargman Lab, The Rockefeller University 2016
-
 """
+
 __author__  = 'Christoph Kirst <ckirst@rockefeller.edu>'
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
 __docformat__ = 'rest'
@@ -28,7 +28,7 @@ base_directory = '/home/ckirst/Science/Projects/CElegansBehaviour/';
 
 experiment_directory = os.path.join(base_directory, 'Experiment/Data');
 
-data_directory = os.path.join(base_directory, 'Data')
+analysis_directory = os.path.join(base_directory, 'Analysis/Data')
 
 
 def filename(strain = 'n2', dtype = 'xy', wid = all):
@@ -51,7 +51,9 @@ def filename(strain = 'n2', dtype = 'xy', wid = all):
 ### Accessing data
 ############################################################################    
 
-def load(strain = 'n2', dtype = 'xy', wid = all, stage = all, valid_only = False, replace_invalid = None, memmap = 'r'):
+def load(strain = 'n2', dtype = 'xy', wid = all, stage = all, 
+         valid_only = False, replace_invalid = None, memmap = 'r'):
+  """Loads experimental data"""
   fn = filename(strain = strain, dtype = dtype, wid = wid);
   if wid is all:
     wid = range(len(glob.glob(fn)));
@@ -95,6 +97,7 @@ def load(strain = 'n2', dtype = 'xy', wid = all, stage = all, valid_only = False
 
 def load_img(strain = 'n2', wid = 80, t = all):
   """Loads cropped worm images"""
+  
   fn = filename(strain = strain, dtype = 'img', wid = wid);
   imgdata = np.load(fn, mmap_mode = 'r');
   if t is all:
@@ -114,10 +117,10 @@ def load_img(strain = 'n2', wid = 80, t = all):
 ### Util 
 ############################################################################      
 
-def stage_switch(stage, valid = False):
+def stage_switch(stage):
   """Returns indices of developmental stage changes"""
   
-  return np.argwhere(np.diff(stage, valid = valid));  
+  return np.argwhere(np.diff(stage));  
 
 
 
@@ -125,20 +128,24 @@ def stage_switch(stage, valid = False):
 ### Test 
 ############################################################################   
 
-if __name__ == '__main__':
-  fn = filename()
+def test():
+  import glob
+  import analysis.experiment as exp
+  reload(exp)  
+  
+  fn = exp.filename()
   print fn
   
   fn = filename(dtype = 'img')
   print fn
   print glob.glob(fn)
   
-  data = load(wid = 0);
+  data = exp.load(wid = 0);
   print data.shape
   
   import matplotlib.pyplot as plt
   plt.figure(1); plt.clf();
-  img = load_img(t=100000);
+  img = exp.load_img(t=200000);
   plt.imshow(img, cmap = 'gray')
   
   #animate movie  
@@ -149,7 +156,7 @@ if __name__ == '__main__':
   plt.show();
   
   for t in range(200000, 300000):
-    figimg.set_data(load_img(t=t));
+    figimg.set_data(exp.load_img(t=t));
     ax.set_title('t=%d' % t);
     time.sleep(0.001)
     fig.canvas.draw()

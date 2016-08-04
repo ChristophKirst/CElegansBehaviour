@@ -1,23 +1,26 @@
 # -*- coding: utf-8 -*-
 """
-Module to model Worm Shapes and Movement
+Module to model Worm shapes and movements
+
+The WormModel class models the main features of the worm shape and
+does inference of the worm shape from images or movies
 
 """
 import numpy as np
 import matplotlib.pyplot as plt
-import numbers
+
 import copy
 
 import cv2
 import scipy.ndimage as nd
 
 from scipy.spatial.distance import cdist
-from scipy.interpolate import splprep,splrep, splev
+from scipy.interpolate import splprep, splev
 
-eps = np.finfo(float).eps
-
-from scripts.analyse_wormshape_fail import analyse_shape
-
+from worm.shape import shape_from_image
+from utils.utils import isnumber, eps
+from signalprocessing.resampling import resample_curve, resample_data
+from imageprocessing.masking import mask_to_phi, curvature_from_phi
 
 
 class WormModel:
@@ -91,9 +94,9 @@ class WormModel:
     n2 = self.center_index();
     
     # resample points equidistantly 
-    center_line = resample_cruve(center_line, n);
-    left_line = resample_cruve(left_line, n);
-    right_line = resample_cruve(right_line, n);
+    center_line = resample_curve(center_line, n);
+    left_line = resample_curve(left_line, n);
+    right_line = resample_curve(right_line, n);
     
     # position
     self.position = center_line[n2,:];
@@ -164,7 +167,7 @@ class WormModel:
     
     self.npoints = center_line.shape[0];
     if self.npoints % 2 != 1:
-      raise RuntimeWarning('WormShape: number of line points expected to be odd, adding a point!')
+      raise RuntimeWarning('WormShape: number of line points  %d expected to be odd, adding a point!' % self.npoints)
       self.npoints += 1; 
     n = self.npoints;
     n2 = self.center_index();
@@ -174,7 +177,7 @@ class WormModel:
     #plt.figure(101); plt.clf();
     #plt.plot(center_line[:,0], center_line[:,1]);
     
-    center_line = resample_cruve(center_line, n);
+    center_line = resample_curve(center_line, n);
     
     #position
     self.position = center_line[n2,:];
@@ -201,18 +204,23 @@ class WormModel:
       self.width = width.copy();
     
   
-  def from_image(self, image, sigma = 1, threshold_level = 0.95,
-                 npts_contour = 100, npts_sides = 21, smooth = 1.0, verbose = False, save = False):
-    shape = analyse_shape(image, sigma = sigma, threshold_level = threshold_level, 
-                 npts_contour = npts_contour, npts_sides = npts_sides, 
-                 smooth = smooth, verbose = verbose, save = save);
-    #print shape[-3].shape, shape[-2].shape, shape[-1].shape
+  def from_image(self, image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
+                       npoints_contour = 100, delta = 0.3, smooth = 1.0,
+                       npoints = 21, 
+                       verbose = False, save = None):
+    
+    shape = shape_from_image(image, sigma = sigma, absolute_threshold = absolute_threshold,
+                             threshold_factor = threshold_factor, npoints_contour = npoints_contour, 
+                             delta = delta, smooth = smooth,
+                             npoints = npoints, 
+                             verbose = verbose, save = save);
+    
     if shape[0]:
-      self.from_lines(shape[-3], shape[-2], shape[-1]);
+      #self.from_lines(shape[1], shape[2], shape[3]);
+      self.from_center_line(shape[1], shape[-1]);
     else:
-      self.npoints = shape[-3].shape[0];
+      self.npoints = shape[1].shape[0];
       self.valid = False; #curled ->  for now treat as invalid
-  
   
   def to_array(self):
     if self.valid:
@@ -273,7 +281,7 @@ class WormModel:
       xym[n2-2-i,:] = xym[n2-1-i,:] - n0 * l;
     
     if npoints is not all and npoints != n:
-      xym = resample_cruve(xym, npoints);
+      xym = resample_curve(xym, npoints);
     
     return xym;
     
@@ -298,7 +306,7 @@ class WormModel:
       if npoints % 2 != 1:
         raise RuntimeWarning('WormModel: number of line points expected to be odd, adding a point!')
         npoints += 1;    
-      center_line = resample_cruve(center_line, npoints);
+      center_line = resample_curve(center_line, npoints);
       width = resample_data(width, npoints);
       ts = center_line[1:,:] - center_line[:-1,:];
       t0 = ts[:-1, :];
@@ -364,7 +372,7 @@ class WormModel:
     poly = np.vstack([sides[0], sides[1][::-1,:]]);
     
     if npoints is not all and npoints != self.npoints:
-      poly = resample_cruve(poly, npoints);
+      poly = resample_curve(poly, npoints);
     
     return poly;
   
@@ -402,7 +410,7 @@ class WormModel:
       worm border is given by phi==0
     """
     
-    return mask2phi(self.mask(size = size));  
+    return mask_to_phi(self.mask(size = size));  
     
       
   def head(self):
@@ -606,7 +614,13 @@ class WormModel:
     else:
       self.theta[n2:] += bend * np.exp(-exponent * np.linspace(1,0,n2-1));
   
-
+  
+  def invert(self):
+    """Invert head and tail"""
+    
+    width = self.width;
+    cl = self.center_line();
+    self.from_center_line(cl[::-1,:], width = width[::-1]);
 
   ############################################################################
   ### Error estimation and fitting
@@ -675,7 +689,7 @@ class WormModel:
       #plt.show();
 
       if len(idx) != 0:
-        c = get_curvature(phi, idx);
+        c = curvature_from_phi(phi, idx);
         error += curvature * np.sum(np.abs(c));
       
     if border is not None:
@@ -887,13 +901,12 @@ class WormModel:
     """Optimize center points separately
     
     """
-    
-    cl = self.center_line();
-    ts = self.normals();    
-    for i in range(self.npoints):
-      
-      errors = np.zeros(samples);
-      nd.map_coordinates(z, np.vstack((x,y)))
+    pass
+    #cl = self.center_line();
+    #ts = self.normals();    
+    #for i in range(self.npoints):
+    #  errors = np.zeros(samples);
+    #  nd.map_coordinates(z, np.vstack((x,y)))
     
     
   
@@ -991,133 +1004,19 @@ class WormModel:
 
 
 
-# Compute curvature
-def get_curvature(phi, idx):
-    dimy, dimx = phi.shape
-    yx = np.array([np.unravel_index(i, phi.shape) for i in idx])  # subscripts
-    y = yx[:, 0]
-    x = yx[:, 1]
+### Tests
 
-    # Get subscripts of neighbors
-    ym1 = y - 1
-    xm1 = x - 1
-    yp1 = y + 1
-    xp1 = x + 1
-
-    # Bounds checking
-    ym1[ym1 < 0] = 0
-    xm1[xm1 < 0] = 0
-    yp1[yp1 >= dimy] = dimy - 1
-    xp1[xp1 >= dimx] = dimx - 1
-
-    # Get indexes for 8 neighbors
-    idup = np.ravel_multi_index((yp1, x), phi.shape)
-    iddn = np.ravel_multi_index((ym1, x), phi.shape)
-    idlt = np.ravel_multi_index((y, xm1), phi.shape)
-    idrt = np.ravel_multi_index((y, xp1), phi.shape)
-    idul = np.ravel_multi_index((yp1, xm1), phi.shape)
-    idur = np.ravel_multi_index((yp1, xp1), phi.shape)
-    iddl = np.ravel_multi_index((ym1, xm1), phi.shape)
-    iddr = np.ravel_multi_index((ym1, xp1), phi.shape)
-
-    # Get central derivatives of SDF at x,y
-    phi_x = -phi.flat[idlt] + phi.flat[idrt]
-    phi_y = -phi.flat[iddn] + phi.flat[idup]
-    phi_xx = phi.flat[idlt] - 2 * phi.flat[idx] + phi.flat[idrt]
-    phi_yy = phi.flat[iddn] - 2 * phi.flat[idx] + phi.flat[idup]
-    phi_xy = 0.25 * (- phi.flat[iddl] - phi.flat[idur] +
-                     phi.flat[iddr] + phi.flat[idul])
-    phi_x2 = phi_x**2
-    phi_y2 = phi_y**2
-
-    # Compute curvature (Kappa)
-    curvature = ((phi_x2 * phi_yy + phi_y2 * phi_xx - 2 * phi_x * phi_y * phi_xy) /
-                 (phi_x2 + phi_y2 + eps) ** 1.5) * (phi_x2 + phi_y2) ** 0.5
-
-    return curvature
-    
-    
-    
- 
-
-
-### Helpers
-
-def isnumber(x):
-  """Checks if argument is a number"""
-  return isinstance(x, numbers.Number);
-
-def mask2dist(mask):
-  """Returns distance transform on a mask
-  
-  Arguments:
-    mask (array): the mask for which to calculate distance transform
-    
-  Returns:
-    array: distance transform of the mask
-  """
-  return nd.distance_transform_edt(mask == 0)
-
-def mask2phi(mask):
-  """Returns distance transform to the contour of the mask
-  
-  Arguments:
-    mask (array): the mask for which to calculate distance transform
-  
-  Returns:
-    array: distance transform to the contour of the mask
-  """
-  
-  phi = mask2dist(mask) - mask2dist(1 - mask) + np.asarray(mask, dtype = float)/mask.max() - 0.5
-  return phi   
-    
-
-def resample_cruve(points, n, smooth = 1.0, periodic = False, derivative = 0):
-  """Resample n points using n equidistant points along a curve
-  
-  Arguments:
-    points (mx2 array): coordinate of the reference points for the curve
-    npoints (int): number of resamples equidistant points
-    smooth (number): smoothness factor
-    periodic (bool): if True assumes the curve is a closed curve
-  
-  Returns:
-    (nx2 array): resampled equidistant points
-  """
-  
-  cinterp, u = splprep(points.T, u = None, s = smooth, per = periodic);
-  us = np.linspace(u.min(), u.max(), n)
-  curve = splev(us, cinterp, der = derivative);
-  return np.vstack(curve).T;
-
-def resample_data(data, n, smooth = 1.0, periodic = False, derivative = 0):
-  """Resample 1d data using n equidistant points
-  
-  Arguments:
-    data (array): data points
-    npoints (int): number of points in equidistant resampling
-    smooth (number): smoothness factor
-    periodic (bool): if True assumes the curve is a closed curve
-  
-  Returns:
-    (array): resampled data points
-  """
-  
-  x = np.linspace(0, 1, data.shape[0]);
-  dinterp = splrep(x, data, s = smooth, per = periodic);
-  x2 = np.linspace(0, 1, n);
-  return splev(x2, dinterp, der = derivative)
-
-
-
-
-
-
-if __name__ == "__main__":
-  
-  ws = WormModel();
+def test():
+  import matplotlib.pyplot as plt
+  import worm.model as wm;
+  reload(wm);
+  ws = wm.WormModel();
   mask = ws.mask();
   
   plt.figure(1); plt.clf();
   plt.imshow(mask);
   
+
+
+if __name__ == "__main__":
+  test()  

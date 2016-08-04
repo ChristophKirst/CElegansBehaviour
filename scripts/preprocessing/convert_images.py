@@ -13,7 +13,7 @@ __docformat__ = 'rest'
 # check cam data:
 import matplotlib.pyplot as plt;
 import scipy.io
-import np
+import numpy as np
 
 
 import experiment as exp
@@ -60,13 +60,13 @@ plt.title( 'min=%f  n=%d' % (d.min(), np.argmin(d)));
 wids = [80, 96];
 
 startfile = [22,22];
-startindex = [561, 135];
+startindex = [561,135];
 
 fileformat = ['/data/Science/Projects/CElegansBehaviour/Experiment/CAM814A4/shortCAM814A4CAM814_2015-11-20-174505-%04d.mat',
               '/data/Science/Projects/CElegansBehaviour/Experiment/CAM819A3/shortCAM819A3CAM819_2015-09-14-175453-%04d.mat'];
 
-filesave = ['/data/Science/Projects/CElegansBehaviour/Experiment/Data/Images/n2_img_w=80_s=all.npy',
-            '/data/Science/Projects/CElegansBehaviour/Experiment/Data/Images/n2_img_w=96_s=all.npy']
+filesave = ['/data/Science/Projects/CElegansBehaviour/Experiment/Data/n2_img_w=80_s=all.npy',
+            '/data/Science/Projects/CElegansBehaviour/Experiment/Data/n2_img_w=96_s=all.npy']
 
 # find the number of data points
 
@@ -92,7 +92,8 @@ for i in range(n):
     img = np.zeros((151,151,3), dtype = 'uint8');
   if img.shape != (151,151,3):
     print 'image has different shape: %s, step: %d/%d fid:%d,%d' % (str(img.shape), i,n, sf, si)
-    img2 = np.zeros((151,151,3), dtype = 'uint8');
+    median = np.median(img);
+    img2 = median * np.ones((151,151,3), dtype = 'uint8');
     img2[:min(151, img.shape[0]), :min(151, img.shape[1]), :min(3, img.shape[2])] = img[:min(151, img.shape[0]), :min(151, img.shape[1]), :min(3, img.shape[2])];
     img = img2;
   

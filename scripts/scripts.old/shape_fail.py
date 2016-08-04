@@ -17,7 +17,7 @@ import imageprocessing.active_worm as aw;
 
 
 
-import experiment as exp;
+import analysis.experiment as exp;
 
 wid = 80;
 
@@ -50,17 +50,19 @@ def analyse_shape_at_time(t):
   img = exp.load_img(wid = wid, t = t);
   
   ws = aw.WormModel(npoints = npoints);
-  ws.from_image(img, verbose = False, save = figfile % t);
+  ws.from_image(img, verbose = True, save = figfile % t);
     
   sdat = np.load(shapefile, mmap_mode = 'r+');
   sdat[t,:] = ws.to_array();
   
   mdat = np.load(measurefile, mmap_mode = 'r+');
   mdat[t,:] = ws.measure();
+  
+  return ws;
 
 
 
-analyse_shape_at_time(105820)
+ws = analyse_shape_at_time(105820)
 
 analyse_shape_at_time(105816)
 
