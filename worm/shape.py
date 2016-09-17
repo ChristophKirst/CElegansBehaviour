@@ -17,11 +17,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import shapely.geometry as geom
+from skimage.filters import threshold_otsu
+import scipy.ndimage.filters as filters
+from scipy.interpolate import splprep, splev
+from scipy.spatial import Voronoi #, voronoi_plot_2d
+
 
 from signalprocessing.resampling import resample_curve, resample_data
+from signalprocessing.peak_detection import find_peaks
 
-def midline_from_sides(left, right, npoints = all, nsamples = all, with_width = False):
-  """Finds middle line between the two side curves
+from imageprocessing.contours import detect_contour, sort_points_to_line, inside_polygon;
+
+
+def midline_from_sides(left, right, npoints = all, nsamples = all, with_width = False, smooth = 0.1):
+  """Finds middle line between the two side curves using vonroi tesselation
   
   Arguments:
     left, right (nx2 array): vertices of the left and right curves
@@ -38,83 +47,40 @@ def midline_from_sides(left, right, npoints = all, nsamples = all, with_width = 
   if nsamples is all:
     nsamples = max(nl,nr);
   if npoints is all:
-    npoints = max(nr,nl);
+    npoints = max(nl,nr);
   
   leftcurve  = resample_curve(left, nsamples);
   rightcurve = resample_curve(right, nsamples);
+
+  # vonroi tesselate 
+  polygon = np.vstack([leftcurve, rightcurve[::-1]])
+  vor = Voronoi(polygon)
+  #voronoi_plot_2d(vor)
+  midline = vor.vertices;
   
-  #leftline = geom.LineString(leftcurve);
+  # detect inside points and connect to line
+  ins = inside_polygon(polygon, midline);
+  midline = np.vstack([leftcurve[0], midline[ins], leftcurve[-1]]);
+  midline = sort_points_to_line(midline);
+  midline = resample_curve(midline, npoints, smooth = smooth);
+  
+  if not with_width:
+    return midline;
+  
+  # calculate normals along midline and intersection to left/right curves
+  w = np.zeros(npoints);
+  
   rightline = geom.LineString(rightcurve);
+  leftline  = geom.LineString(leftcurve);
   
-  #plt.figure(10); plt.clf();
-  #plt.plot(leftcurve[:,0], leftcurve[:,1])
-  #plt.plot(rightcurve[:,0], rightcurve[:,1])
-  
-  mid_points = np.zeros((nsamples,2));
-  if with_width:
-    w = np.zeros(nsamples);
-  
-  for i in range(nsamples):
-    left_point = geom.Point(leftcurve[i,0], leftcurve[i,1]);
-    right_point = rightline.interpolate(rightline.project(left_point))
-    mid_points[i,:] = 0.5 * np.array([left_point.x + right_point.x, left_point.y + right_point.y]);
-    
-    if with_width:
-      w[i] = np.linalg.norm(np.array([left_point.x - right_point.x, left_point.y - right_point.y]));
-    
-    #plt.plot([left_point.x,right_point.x], [left_point.y, right_point.y]);
-  #plt.plot(mid_points[:,0], mid_points[:,1], 'red');
-  
-  if with_width:
-    return resample_curve(mid_points, npoints), resample_data(w, npoints)
-  else:
-    return resample_curve(mid_points, npoints)
+  for i in range(npoints):
+    mid_point = geom.Point(midline[i,0], midline[i,1]);
+    right_point = rightline.interpolate(rightline.project(mid_point));
+    left_point  =  leftline.interpolate( leftline.project(mid_point));
+    w[i] = np.linalg.norm(np.array([left_point.x - right_point.x, left_point.y - right_point.y]));
 
-    
-# without shapely
-#from scipy.spatial.distance import cdist
-#
-#def find_midline(xl,yl, xr, yr, lookahead = 10, offset = 5):
-#  """Finds the optimal midline given the side lines of a worm"""
-#  n = xl.shape[0];
-#  xm = np.zeros(n);
-#  ym = np.zeros(n);
-#  nu = np.zeros(n, dtype = int);
-#  
-#  #find the mapping that minimizes the distance between left and right sides  
-#  for i in range(offset):
-#    xm[i] = (xl[i] + xr[i])/2;
-#    ym[i] = (yl[i] + yr[i])/2;
-#    nu[i] = i;
-#    
-#  j = offset; jm = min(j+lookahead, n);
-#  for i in range(offset, n - offset):
-#    #find closest point from acutal ref point
-#    dists = cdist([[xl[i], yl[i]]], np.array([xr[j:jm], yr[j:jm]]).T);
-#    k = dists.argmin();
-#    
-#    xm[i] = (xl[i] + xr[j+k])/2;
-#    ym[i] = (yl[i] + yr[j+k])/2;
-#    nu[i] = j+k;
-#    
-#    j = j + k; jm = min(j+lookahead, n);
-#  
-#  for i in range(n-offset, n):
-#    xm[i] = (xl[i] + xr[i])/2;
-#    ym[i] = (yl[i] + yr[i])/2;
-#    nu[i] = i;
-#  
-#  return xm,ym,nu
+  return midline, w
 
-
-from skimage.filters import threshold_otsu
-
-import scipy.ndimage.filters as filters
-from scipy.interpolate import splprep, splev
-
-from signalprocessing.peak_detection import find_peaks
-
-from imageprocessing.contours import detect_contour, inside_polygon
 
 def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
                      npoints_contour = 100, delta = 0.3, smooth = 1.0,
@@ -175,7 +141,6 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
     if verbose:
       print "Could not detect worm: Found %d countours!" % len(pts);
     return False, np.zeros((npoints,2)), np.zeros((npoints,2)), np.zeros((npoints,2))
-  
   
   ### interpolate outer contour
   cinterp, u = splprep(pts.T, u = None, s = smooth, per = 1) 
@@ -305,6 +270,107 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
   width = w;
   success = pts_inner is None;
   return success, line_center, line_left, line_right, width
+
+
+
+
+def midline_from_sides_projection(left, right, npoints = all, nsamples = all, with_width = False):
+  """Finds middle line between the two side curves using projection method
+  
+  Arguments:
+    left, right (nx2 array): vertices of the left and right curves
+    npoints (int or all): number of points of the mid line
+    nsamples (int or all): number of sample points to contruct midline
+    with_width (bool): if True also return estimated width
+  
+  Returns:
+    nx2 array of midline vertices
+    
+  Notes:
+    unstable when worms starts to curl
+  """
+  # resample to same size
+  nl = left.shape[0];
+  nr = right.shape[0];
+  if nsamples is all:
+    nsamples = max(nl,nr);
+  if npoints is all:
+    npoints = max(nl,nr);
+  
+  leftcurve  = resample_curve(left, nsamples);
+  rightcurve = resample_curve(right, nsamples);
+  
+  #leftline = geom.LineString(leftcurve);
+  rightline = geom.LineString(rightcurve);
+  
+  #plt.figure(10); plt.clf();
+  #plt.plot(leftcurve[:,0], leftcurve[:,1])
+  #plt.plot(rightcurve[:,0], rightcurve[:,1])
+  
+  mid_points = np.zeros((nsamples,2));
+  if with_width:
+    w = np.zeros(nsamples);
+  
+  for i in range(nsamples):
+    left_point = geom.Point(leftcurve[i,0], leftcurve[i,1]);
+    right_point = rightline.interpolate(rightline.project(left_point))
+    mid_points[i,:] = 0.5 * np.array([left_point.x + right_point.x, left_point.y + right_point.y]);
+    
+    if with_width:
+      w[i] = np.linalg.norm(np.array([left_point.x - right_point.x, left_point.y - right_point.y]));
+    
+    #plt.plot([left_point.x,right_point.x], [left_point.y, right_point.y]);
+  #plt.plot(mid_points[:,0], mid_points[:,1], 'red');
+  
+  if with_width:
+    return resample_curve(mid_points, npoints), resample_data(w, npoints)
+  else:
+    return resample_curve(mid_points, npoints)
+    
+# without shapely
+#from scipy.spatial.distance import cdist
+#
+#def find_midline(xl,yl, xr, yr, lookahead = 10, offset = 5):
+#  """Finds the optimal midline given the side lines of a worm"""
+#  n = xl.shape[0];
+#  xm = np.zeros(n);
+#  ym = np.zeros(n);
+#  nu = np.zeros(n, dtype = int);
+#  
+#  #find the mapping that minimizes the distance between left and right sides  
+#  for i in range(offset):
+#    xm[i] = (xl[i] + xr[i])/2;
+#    ym[i] = (yl[i] + yr[i])/2;
+#    nu[i] = i;
+#    
+#  j = offset; jm = min(j+lookahead, n);
+#  for i in range(offset, n - offset):
+#    #find closest point from acutal ref point
+#    dists = cdist([[xl[i], yl[i]]], np.array([xr[j:jm], yr[j:jm]]).T);
+#    k = dists.argmin();
+#    
+#    xm[i] = (xl[i] + xr[j+k])/2;
+#    ym[i] = (yl[i] + yr[j+k])/2;
+#    nu[i] = j+k;
+#    
+#    j = j + k; jm = min(j+lookahead, n);
+#  
+#  for i in range(n-offset, n):
+#    xm[i] = (xl[i] + xr[i])/2;
+#    ym[i] = (yl[i] + yr[i])/2;
+#    nu[i] = i;
+#  
+#  return xm,ym,nu
+
+# Note: another way to get midline is via repeated mean to nearest point on other side
+
+
+
+
+
+
+
+
 
 
 def test():

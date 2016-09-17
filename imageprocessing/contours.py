@@ -13,7 +13,7 @@ import numpy as np
 from numpy import ma
 import matplotlib._contour as _contour
 from matplotlib.path import Path
-
+from scipy.spatial.distance import pdist, squareform
 
 def detect_contour(img, level):
   """Returns list of vertices of contours at different levels
@@ -50,12 +50,42 @@ def inside_polygon(vertices, point):
   
   Arguments:
     vertices (nx2 array): vertices of the polygon
-    point (2 array): coordinates of the point
+    point (2 array or dx2 array): coordinates of the point
     
   Returns:
     bool: True if point is inside the polygon
   """
   
   p = Path(vertices);
-  return p.contains_point(point);
-
+  if point.ndim == 1:
+    return p.contains_point(point);
+  else:
+    return p.contains_points(point);
+    
+    
+def sort_points_to_line(vertices, start = 0):
+  """Sorts points to a line by sequentiall connectoing nearest points
+  
+  Arguments:
+    vertices (nx2 array): vertices of the line
+    start (int): start index
+  
+  Returns:
+    nx2 array: sorted points
+  """
+  
+  d = squareform(pdist(vertices));
+  
+  i = start;
+  n = vertices.shape[0];
+  uidx = np.ones(n, dtype = bool);
+  uidx[i] = False;
+  sidx = [i];  
+    
+  while np.sum(uidx) > 0:
+    i = np.argmin(d[i][uidx]);
+    i = np.where(uidx)[0][i];
+    sidx.append(i);
+    uidx[i] = False;
+  
+  return vertices[sidx];

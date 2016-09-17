@@ -68,8 +68,23 @@ def smooth_data(data, bounds = all, nbins = 256, sigma = 10):
     img = ndi.gaussian_filter(img, sigma, mode = 'constant')
   
   return img;
+
+
+def intensity_along_curve(image, curve, order = 3):
+  """Returns intensity profile along a curve in an image
   
+  Arguments:
+    image (array): the grayscale image
+    curve (nx2 array): points defining the curve
+    order (int): interpolation order
   
+  Returns:
+    n array: intensity values along curve
+  """
+  
+  return ndi.map_coordinates(image, curve.T[::-1], order = order);
+  
+
 def test():
   import numpy as np;
   import matplotlib.pyplot as plt;
@@ -92,3 +107,21 @@ def test():
   x,y = img.nonzero()
   print (x/100.0);
   print np.sort(data[:,0])
+  
+  curve = np.vstack([range(30,70), [90-i*1.5 for i in range(40)]]).T;
+  ic0 = sth.intensity_along_curve(imgs, curve);
+  
+  #cc = curve.T;
+  #cc = cc[::-1];
+  #cc[1] = 100-cc[1];
+  #import scipy.ndimage as ndi
+  #ic = ndi.map_coordinates(imgs, cc);
+  
+  plt.figure(2); plt.clf();
+  plt.subplot(1,2,1);
+  plt.imshow(imgs);
+  plt.plot(curve[:,0], curve[:,1], 'r');
+  #plt.plot(cc[0,:], cc[1,:])
+  plt.subplot(1,2,2);
+  plt.plot(ic0, 'r')
+  #plt.plot(ic)

@@ -25,6 +25,9 @@ def resample_curve(curve, npoints, smooth = 0, periodic = False, derivative = 0)
   """
     
   cinterp, u = splprep(curve.T, u = None, s = smooth, per = periodic);
+  if npoints is all:
+    npoints = curve.shape[0];
+  
   us = np.linspace(u.min(), u.max(), npoints)
   curve = splev(us, cinterp, der = derivative);
   return np.vstack(curve).T;
@@ -45,6 +48,8 @@ def resample_data(data, npoints, smooth = 0, periodic = False, derivative = 0):
   
   x = np.linspace(0, 1, data.shape[0]);
   dinterp = splrep(x, data, s = smooth, per = periodic);
+  if npoints is all:
+    npoints = data.shape[0];
   x2 = np.linspace(0, 1, npoints);
   return splev(x2, dinterp, der = derivative)
   
