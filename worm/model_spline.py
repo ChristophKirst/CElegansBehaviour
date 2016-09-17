@@ -97,12 +97,7 @@ class WormModel:
     
     self.valid = valid;
     
-  
-  def spline
-  def initalize_splines(self):
-    self.s = np.linspace(0, 1, self.nsamples);
-    self.
-    
+
     
   
   ############################################################################
