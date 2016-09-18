@@ -52,7 +52,8 @@ def resample_data(data, npoints, smooth = 0, periodic = False, derivative = 0):
     npoints = data.shape[0];
   x2 = np.linspace(0, 1, npoints);
   return splev(x2, dinterp, der = derivative)
-  
+
+
 
 def test():
   import numpy as np
