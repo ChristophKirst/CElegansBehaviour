@@ -42,7 +42,7 @@ class Spline(Curve):
       and used instead of the standard interpolating routines
     """
     
-    self._degree = int(degree);
+    self.degree = int(degree);
 
     if values is not None:
       values = np.array(values, dtype = float);
@@ -53,51 +53,54 @@ class Spline(Curve):
         if nparameter is None:
           raise RuntimeError('cannot determine number of samples!');
         npoints = nparameter;
-      self._points = np.linspace(0,1,npoints);
+      self.points = np.linspace(0,1,npoints);
     else:
-      self._points = np.array(points, dtype = float);
+      self.points = np.array(points, dtype = float);
     
-    self._npoints = self._points.shape[0];
+    self.npoints = self.points.shape[0];
     
     if parameter is None:
       if knots is None:
         if nparameter is None:
           raise RuntimeError('parameter, knot vector or number of parameter needs to be defined!');
-        self._knots = np.linspace(0,1, nparameter - degree - 1 + 2)[1:-1];
-        self._nparameter = int(nparameter);
+        self.knots = np.linspace(0,1, nparameter - degree - 1 + 2)[1:-1];
+        self.nparameter = int(nparameter);
       else:
-        self._knots = np.array(knots, dtype = float);
-        self._nparameter = int(knots.shape[0] + 1 + degree);
+        self.knots = np.array(knots, dtype = float);
+        self.nparameter = int(knots.shape[0] + 1 + degree);
         
       if values is None:
-        self._parameter = np.zeros(self.nparameter);
+        self.parameter = np.zeros(self.nparameter);
       else:
-        self._basis_inv = None;
-        self.parameter_from_values(values);
+        self.basis_inv = None;
+        self.from_values(values);
         
     else:
-      self._parameter = np.array(parameter, dtype = float);
-      self._nparameter = self._parameter.shape[0];
+      self.parameter = np.array(parameter, dtype = float);
+      self.nparameter = self.parameter.shape[0];
       
       if knots is None:
-        self._knots = np.linspace(0,1, self._nparameter - self._degree - 1 + 2)[1:-1];
+        self.knots = np.linspace(0,1, self.nparameter - self.degree - 1 + 2)[1:-1];
       else:
-        self._knots = np.array(knots, dtype = float);
-        if self._knots.shape[0] != int(knots.shape[0] + 1 + degree):
+        self.knots = np.array(knots, dtype = float);
+        if self.knots.shape[0] != int(knots.shape[0] + 1 + degree):
           raise RuntimeError('parameter and knots have inconsistent dimensions %d + 1 + %d != %d' % (self.knots.shape[0], self.degree, self.nparameter)); 
     
     # get all knots
-    y = np.linspace(0,1,self._npoints);
-    tck = splrep(self._points, y, t = self._knots, task = -1, k = self._degree);
-    self._knots_all = tck[0];
+    y = np.linspace(0,1,self.npoints);
+    tck = splrep(self.points, y, t = self.knots, task = -1, k = self.degree);
+    self.knots_all = tck[0];
     
     # calcualte basis matrix
-    self._basis = self.basis_matrix();
+    self.basis = self.basis_matrix();
     
-    if self._npoints == self._nparameter:
-      self._basis_inv = np.linalg.inv(self._basis);
+    if self.npoints == self.nparameter:
+      self.basis_inv = np.linalg.inv(self.basis);
     else:
-      self._basis_inv = None;
+      self.basis_inv = None;
+    
+    #the values
+    self.values = self.get_values(self.parameter);
     
   
   def from_values(self, values, points = None):
@@ -110,14 +113,20 @@ class Spline(Curve):
     Returns
       array: the bspline parameter
     """
-    if points is None and self._basis_inv is not None: # use matrix multiplication if possible
-      self._parameter = self._basis_inv.dot(values);
+    if points is all:
+      points = None;
+    
+    if points is None and self.basis_inv is not None: # use matrix multiplication if possible
+      self.parameter = self.basis_inv.dot(values);
+      self.values = values;
     else:
       if points is None:
-        points = self._points;
-      tck = splrep(self._points, values, t = self._knots, task = -1, k = self._degree);
-      self._parameter = tck[1][:self._nparameter];
-    return self._parameter; 
+        points = self.points;
+      tck = splrep(self.points, values, t = self.knots, task = -1, k = self.degree);
+      self.parameter = tck[1][:self.nparameter];
+      self.values = self.basis.dot(self.parameter);
+ 
+    return self.parameter; 
   
   def from_parameter(self, parameter):
     """Change parameter of the spline
@@ -125,37 +134,46 @@ class Spline(Curve):
     Arguments:
       parameter (array): the new parameter
     """
-    self._parameter = parameter;
-    return self._parameter;
+    self.parameter = parameter;
+    self.values = self.basis.dot(self.parameter);
+    return self.parameter;
   
-  def values(self, points = None, derivative = 0, extrapolation = 1):
+  def get_values(self, parameter = None, points = None, derivative = 0, extrapolation = 1):
     """Calculates the values of the curve along the sample points
     
     Arguments:
       parameter (array or None): the bspline parameter, if None use internal parameter
+      points (array or None): the sample points for the values, if None use internal samples points
       derivative (int): the order of the derivative
       extrapolation (int):  0=extrapolated value, 1=return 0, 2=raise a ValueError, 3=boundary value
 
     Returns:
       array: the values of the spline at the sample points
     """
+    if points is all:
+      points = None;
     
-    if derivative == 0 and points is None: # fast matrix version
-      return self._basis.dot(self._parameter);
+    if parameter is None:
+       if derivative == 0 and points is None: # fast matrix version
+         return self.values;
+       else:
+         parameter = self.parameter;
+    
+    if derivative == 0 and points is None:
+      return self.basis.dot(parameter);
     else: # full interpolation
       if points is None:
-        points = self._points;
-      pp = np.pad(self._parameter, (0,self._degree+1), 'constant');
-      tck = (self._knots_all, pp, self._degree);
+        points = self.points;
+      pp = np.pad(parameter, (0,self.degree+1), 'constant');
+      tck = (self.knots_all, pp, self.degree);
       return splev(points, tck, der = derivative, ext = extrapolation);  
   
-
-  
+    
   def __call__(self, points = None, parameter = None, derivative = 0, extrapolation = 1):
     """Calculates the values of the curve along the sample points
     
     Arguments:
-      samples (array or None): the sample points for the values, if None use internal samples points
+      points (array or None): the sample points for the values, if None use internal samples points
       parameter (array or None): the bspline parameter, if None use internal parameter
       derivative (int): the order of the derivative
       extrapolation (int):  0=extrapolated value, 1=return 0, 2=raise a ValueError, 3=boundary value
@@ -163,30 +181,19 @@ class Spline(Curve):
     Returns:
       array: the values of the spline at the sample points
     """
-    
-    if parameter is None:
-      parameter = self._parameter;
-    
-    if points is None and derivative == 0: # fast matrix version
-      return self._basis.dot(parameter);
-    else: # full interpolation
-      if points is None:
-        points = self._points
-      pp = np.pad(parameter, (0,self._degree+1), 'constant');
-      tck = (self._knots_all, pp, self._degree);
-      return splev(points, tck, der = derivative, ext = extrapolation);
+    return self.get_values(parameter = parameter, points = points, derivative = derivative, extrapolation = extrapolation);
 
 
   def basis_matrix(self, derivative = 0):
     """Basis matrix to calucalte spline coefficients via matrix product""" 
   
-    basis = np.zeros((self._nparameter, self._npoints));
-    for i in range(self._nparameter):
-      p = np.zeros(self._nparameter);
+    basis = np.zeros((self.nparameter, self.npoints));
+    for i in range(self.nparameter):
+      p = np.zeros(self.nparameter);
       p[i] = 1;
-      pp = np.pad(p, (0,self._degree+1), 'constant');
-      tck = (self.knots_all, pp, self._degree);
-      basis[i] = splev(self._points, tck, der = derivative, ext = 1);
+      pp = np.pad(p, (0,self.degree+1), 'constant');
+      tck = (self.knots_all, pp, self.degree);
+      basis[i] = splev(self.points, tck, der = derivative, ext = 1);
     
     return basis.T;
     
@@ -229,13 +236,12 @@ def test():
   import curves.splines as sp;
   reload(sp);
 
-  s = sp.Spline(nparameter = 10, npoints = 141, degree = 3);
-  
-  x = np.sin(10* s.samples) + np.sin(2 * s.samples);
-  p = s.parameter_from_values(x)
-  tck = splrep(s.samples, x, t = s.knots, task = -1, k = s.degree);
-  xpp = splev(s.samples, tck);
-  xp = s.values_from_parameter(p);
+  s = sp.Spline(nparameter = 10, npoints = 141, degree = 3);  
+  x = np.sin(10* s.points) + np.sin(2 * s.points);
+  p = s.from_values(x)
+  tck = splrep(s.points, x, t = s.knots, task = -1, k = s.degree);
+  xpp = splev(s.points, tck);
+  xp = s.get_values(p);
   
   plt.figure(1); plt.clf();
   plt.plot(x);
@@ -246,22 +252,23 @@ def test():
   for i in range(s.nparameter):
     pp = np.zeros(s.nparameter);
     pp[i] = 1;
-    xp = s.values_from_parameter(pp);
-    plt.plot(s.samples, xp);
+    xp = s.get_values(pp);
+    plt.plot(s.points, xp);
   plt.title('basis functions scipy')
   
   # test spline basis
   
   reload(sp);
-  s = sp.Spline(nparameter = 10, nsamples = 141, degree = 3);
+  s = sp.Spline(nparameter = 10, npoints = 141, degree = 3);
 
   bm = s.basis_matrix();
   plt.figure(3); plt.clf();
   plt.plot(bm);
   plt.title('basis functions matrix')
   
+
   xb = bm.dot(p);
-  xp = s.values_from_parameter(p);
+  xp = s.get_values(p);
   
   #xb = np.dot(np.invert(bm), pb);
 
@@ -273,9 +280,9 @@ def test():
   plt.plot(xp)
   
   # case of nsmaples = ncoefficients
-  s = sp.Spline(nparameter = 25, nsamples = 25, degree = 3);
-  x = np.sin(10* s.samples) + np.sin(2 * s.samples);
-  p = s.parameter_from_values(x);
+  s = sp.Spline(nparameter = 25, npoints = 25, degree = 3);
+  x = np.sin(10* s.points) + np.sin(2 * s.points);
+  p = s.from_values(x);
   
   bm = s.basis;
   pb = np.linalg.inv(bm).dot(x);
@@ -284,7 +291,7 @@ def test():
   plt.plot(p);
   plt.plot(pb);
   
-  xs = s(s.samples, p);
+  xs = s(s.points, p);
   xp = bm.dot(pb);
   
   plt.figure(6); plt.clf();
@@ -295,10 +302,10 @@ def test():
   from utils.timer import timeit
   @timeit
   def ts():
-    return s(s.samples, p);    
+    return s(s.points, p);    
   @timeit
   def tb():
-    return s.values_from_parameter(p);
+    return s.get_values(p);
       
   ps = ts();
   pb = tb();
@@ -307,10 +314,10 @@ def test():
   # factor ~10 times faster with basis
   
   # test shifting spline by a value s
-  s = sp.Spline(nparameter = 25, nsamples = 25, degree = 3);
-  x = np.sin(10* s.samples) + np.sin(2 * s.samples);
-  p = s.parameter_from_values(x);  
-  xnew = s(s.samples + 0.05, p);
+  s = sp.Spline(nparameter = 25, npoints = 25, degree = 3);
+  x = np.sin(10* s.points) + np.sin(2 * s.points);
+  p = s.from_values(x);  
+  xnew = s(s.points + 0.05, p);
   
   plt.figure(7); plt.clf();
   plt.plot(x);

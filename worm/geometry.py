@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Worm Shapes
+Worm Geometry
 
-Routines to detect and process worm shapes
+Routines to detect and process and manipulate worm shapes
 
 See also: 
   :mod:`model`
@@ -624,7 +624,7 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
   
   Returns:
     success (bool): if True the shape was successfully extracted (False if worm is curled up or to many contours)
-    arrays (npointsx2): mid, left, right side lines of the worm
+    arrays (npointsx2): center, left, right side lines of the worm
     
   Note:
     This is a fast way to detect the worm shape, fails for worms intersecting themselves

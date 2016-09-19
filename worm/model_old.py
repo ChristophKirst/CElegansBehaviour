@@ -5,27 +5,7 @@ Module to model Worm shapes and movements
 The WormModel class models the main features of the worm shape and
 does inference of the worm shape from images or movies
 
-The worm is parameterized by:
-
-  * xy          - position of the worm (the center of the mid line)
-  * orientation - absolute orientation of the worm
-  * length      - length of the center line
-  * bending     - parameters for the bending of the center line
-  * width       - parameters width profile along that center line
-
-The bending and width profiles are parameterized via specialized classes,
-handling e.g. b spline calculations
-
-Note:
-  The number of variable parameter during tracking / shape detection is the number of control points
-  for the bending (len(b)) + for the position (2) + actual velocity (1) and optionally speeds for
-  additional bending modes (k)
 """
-
-__license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
-__author__ = 'Christoph Kirst <ckirst@rockefeller.edu>'
-__docformat__ = 'rest'
-
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -35,86 +15,56 @@ import cv2
 import scipy.ndimage as nd
 
 from scipy.spatial.distance import cdist
-from scipy.interpolate import splrep, splprep, splev
+from scipy.interpolate import splprep, splev
 
-import worm.shape as shape
-
+from worm.shape import shape_from_image
 from utils.utils import isnumber, eps
-
-from signalprocessing.splines import Spline
 from signalprocessing.resampling import resample_curve, resample_data
-
 from imageprocessing.masking import mask_to_phi, curvature_from_phi
-
 
 
 class WormModel:
   """Class modeling the shape and posture of a worm"""
   
-  def __init__(self, length = 40, xy = [75, 75], orientation = 0,
-               bending = None, width = None):
+  def __init__(self, npoints = 21, length = 40, theta = 0, width = None, position = [75, 75], orientation = 0, valid = True):
     """Constructor of WormModel
     
     Arguments:
+      npoints (int or None): number of reference points, expected to be odd
       length (number): length of the center line of the worm [in pixel]
-      xy (2 array): position of the center of the center line [in pixel]
-      theta (array or None): center bending angle (if None non bend worm)
-      width (array or None): width profile (if none use default profile)
-      theta_model (array or None): the model for the center bending angle curve (if None non use Spline)
-      width_model (array or None): the model for the width profile curve (if none use Spline)
-      
-    Note:
-      The number of samples form the theta curve is nsamples - 2
+      theta (number or array): angles between segments connecting the reference points [in rad], if array len is npoints-2
+      width (number or array or None): width of the worm at reference points [in pixel], if array len is npoints
+      position (array): absolute worm position of central point of center line
+      orientation (number): absolute rotation of the worm (angle between verrtical and the (npoints-1) segment of the worm)
     """
     
+    if npoints % 2 != 1:
+      raise RuntimeWarning('WormModel: number of reference points expected to be odd, adding a point!')
+      npoints += 1;
+    self.npoints = npoints; # number of segments
+    
     self.length = float(length);
-    self.xy = np.array(xy, dtype = float);
     
-    if theta is None:
-      self.theta_model = Spline(values = theta, nsample = 21, nparameter = 10, degree = 3);
-    else:
-      self.theta_model = theta_model;
+    if isnumber(theta):
+      theta = np.ones(npoints-2) * theta;
+    self.theta = theta.copy();
     
-    self.nsamples = self.theta_model.nsamples;    
+    if isnumber(width):
+      width = np.ones(npoints) * width;
+    elif width is None:
+      width = self.guess_width();
+    self.width = width.copy();
     
-    if width_model is None:
-      if width is None:
-        width = self.defaul_width();
-      self.width_model = Spline(values = width, nparameter = 10, degree = 3);
-    else:
-      self.width_model = width_model;
+    self.position = np.array(position);
     
-    assert self.nsamples == self.width_model.nsamples;
+    self.orientation = orientation;
     
     self.valid = valid;
-  
-  
-  ############################################################################
-  ### Properties
-   
-  def nparameter(self, full = False):
-    """Number of parameter"""
-    
-    if full: # length + width profile + speed [theta speeds / turning speeds]
-      n = 1 + self.width_model.nparameter + 1; # + self.theta_model.nparameter;
-    else:
-      n = 0;
-    
-    return n + self.theta_model.nparameter + 3; #theta and position and orientation
-   
-  
-  def parameter(self, full = False):
-    """Parameter of the worm shape"""
-    
-    if full:
-      return np.hstack([self.theta_model.parameter, self.xy, self.orientation, self.length, self.width_model.parameter, self.speed]) #self.speed, self.w, self.b_speed
-    else:
-      return np.hstack([self.theta_model.parameter, self.xy, self.orientation]) #self.speed, self.w, self.b_speed
   
   ############################################################################
   ### Constructors
   
-  def default_width(self):
+  def guess_width(self):
     """Initial guess for worm width
     
     Note: fit from data, adjust to data / age etc
@@ -124,43 +74,17 @@ class WormModel:
       b = 0.351;
       return a * np.power(x,b)*np.power(1-x, b) * np.power(0.5, -2*b);
     
-    self.width = w(np.linspace(0, 1, self.nsamples));
+    self.width = w(np.linspace(0,1, self.npoints));
     return self.width;
 
-
-  def from_parameter(self, parameter):
-    """Sets the parameter from parameter array
+  def from_lines(self, center_line, left_line, right_line):
+    """Initialize worm model from center line and the borders
     
     Arguments:
-      parameter (array): parameter as returned by parameter function
-    
-    Note:
-      len(parameter) should be as returned by nparameter function
-    """
-    
-    self.b = np.array(parameter[:self.ncoeffcients], dtype = float);
-    self.xy = np.array(parameter[self.ncoeffcients:self.ncoeffcients+2], dtype = float);
-    #self.speed = float(parameter[self.ncoeffcients+2]);
-    #self.w = np.array(parameter[self.ncoeffcients+3:2*self.ncoeffcients+3], dtype = float);
-    #self.b_speed = np.array(parameter[2*self.ncoeffcients+3:3*self.ncoeffcients+3], dtype = float);
-    
-  
-  def from_lines(self, left_line, right_line, center_line = None):
-    """Initialize worm model from the left and right border lines
-    
-    Arguments:
+      center_line (nx2 array): points of center line
       left_line (nx2 array): points of left border line
       right_line (nx2 array): points of right border line
-      center_line (nx2 array): optional center line
     """
-    
-    # get center line and width profile
-    if center_line is None:
-      
-    
-    
-    # construct from center line and width
-    self.from_center_line(center_line, width);
     
     self.npoints = center_line.shape[0];
     if self.npoints % 2 != 1:
@@ -322,7 +246,7 @@ class WormModel:
   
   def center_index(self):
     """Returns index of centeral point"""
-    return (self.npoints-1)//2;
+    return (self.npoints-1)/2;
     
   def center_line(self, npoints = all):
     """Returns center line of the worm
@@ -1082,34 +1006,6 @@ class WormModel:
 
 ### Tests
 
-def test_spline():
-  import numpy as np
-  import matplotlib.pyplot as plt
-  import worm.model_spline as wm;
-  reload(wm);
-
-  s = wm.Spline(ncoefficients = 10, nsamples = 141, degree = 3);
-  
-  x = np.sin(10* s.s) + np.sin(2 * s.s);
-  p = s.coefficients(x)  
-  tck = splrep(s.s, x, t = s.knots, task = -1, k = s.degree);
-  xpp = splev(s.s, tck);
-  xp = s.values(p);
-  
-  plt.figure(1); plt.clf();
-  plt.plot(x);
-  plt.plot(xp);
-  plt.plot(xpp);
-  
-  plt.figure(1); plt.clf();
-  for i in range(s.ncoefficients):
-    pp = np.zeros(s.ncoefficients);
-    pp[i] = 1;
-    xp = s.values(pp);
-    plt.plot(s.s, xp);
-
-
-
 def test():
   import matplotlib.pyplot as plt
   import worm.model as wm;
@@ -1119,8 +1015,6 @@ def test():
   
   plt.figure(1); plt.clf();
   plt.imshow(mask);
-  
-  
   
 
 
