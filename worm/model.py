@@ -35,18 +35,18 @@ from scipy.spatial.distance import cdist
 from scipy.interpolate import splrep, splprep, splev
 
 import worm.geometry as wormgeo
-#from curves.curve import Curve
+from curves.curve import Curve
 from curves.spline import Spline
 from signalprocessing.resampling import resample_curve, resample_data
 from imageprocessing.masking import mask_to_phi, curvature_from_phi
 from utils.utils import isnumber, eps
 
 
-class WormModel:
+class WormModel(object):
   """Class modeling the shape and posture and motion of a worm"""
   
   def __init__(self, length = 40, xy = [75, 75], orientation = 0,
-               bending = None, width = None):
+               bending = None, width = None, npoints = 21):
     """Constructor of WormModel
     
     Arguments:
@@ -61,19 +61,26 @@ class WormModel:
     
     self.length = float(length);
     self.xy = np.array(xy, dtype = float);
+    self.orientation = float(orientation);
+    
+    if npoints is None:
+      self.npoints = 21;
+    else:
+      self.npoints = int(npoints);
+    
     
     if bending is None:
-      self.bending = Spline(npoints = 21, nparameter = 10, degree = 3);
+      self.bending = Spline(npoints = self.npoints - 2, nparameter = 10, degree = 3);
     elif isinstance(bending, Curve):
       self.bending = bending;
     else:
       self.bending = Spline(values = bending, npoints = 21, nparameter = 10, degree = 3);
     
-    self.npoints = self.bending.npoints;    
+    self.npoints = self.bending.npoints + 2;    
     
     if width is None:
-      width = self.defaul_width();
-      self.width = Spline(values = width, npoints = 21, nparameter = 10, degree = 3);
+      width = self.default_width();
+      self.width = Spline(values = width, npoints = self.npoints, nparameter = 10, degree = 3);
     elif isinstance(width, Curve):
       self.width = width;
     else:
@@ -124,7 +131,7 @@ class WormModel:
       b = 0.351;
       return a * np.power(x,b)*np.power(1-x, b) * np.power(0.5, -2*b);
     
-    self.width = w(np.linspace(0, 1, self.nsamples));
+    self.width = w(np.linspace(0, 1, self.npoints));
     return self.width;
 
 
@@ -432,6 +439,10 @@ class WormModel:
       worm in this direction.
     """
     
+    theta = self.bending(points = self.bending.points + 0.1);
+    self.bending.from_values(theta);
+
+    
  
      
   def stretch(self, factor):
@@ -531,6 +542,11 @@ def test():
   import worm.model as wm;
   reload(wm);
   ws = wm.WormModel();
+  
+  
+  
+  
+  
   mask = ws.mask();
   
   plt.figure(1); plt.clf();

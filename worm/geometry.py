@@ -366,7 +366,7 @@ def center_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, n
   
   # resample center lines 
   if nsamples != nt + 2 or resample:
-    itheta = resample_curve(theta, nsamples - 2);
+    itheta = resample_data(theta, nsamples - 2);
   else:
     itheta = theta;
   
@@ -387,7 +387,7 @@ def center_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, n
   
   if with_normals:
     if npoints != nsamples:
-      itheta = resample_curve(itheta, npoints - 1);
+      itheta = resample_data(itheta, npoints - 1);
     
     print itheta.shape
     dtheta = np.diff(itheta);
@@ -425,7 +425,7 @@ def center_from_theta_spline(theta, orientation = 0, xy = [0,0], length = 1, npo
   
   # resample center lines 
   if nsamples != nt + 2 or resample:
-    itheta = resample_curve(theta, nsamples - 2);
+    itheta = resample_data(theta, nsamples - 2);
   else:
     itheta = theta;
   
@@ -460,7 +460,7 @@ def center_from_theta_spline(theta, orientation = 0, xy = [0,0], length = 1, npo
   
   if with_normals:
     if npoints != nsamples:
-      itheta = resample_curve(itheta, npoints);
+      itheta = resample_data(itheta, npoints);
     dtheta = np.diff(itheta);
     itheta += np.pi/2;
     #itheta = np.hstack([itheta, itheta[-1]]);
@@ -502,7 +502,11 @@ def shape_from_theta_discrete(theta, width, orientation = 0, xy = [0,0], length 
                                                npoints = npoints, nsamples = nsamples, resample = resample, smooth = smooth, 
                                                with_normals = True)
 
-  w = np.hstack([0, width, 0]);  # assume zero width at head an tail
+  #w = np.hstack([0, width, 0]);  # assume zero width at head an tail
+  if width.shape[0] != npoints:
+    w = resample_data(width, npoints = npoints);
+  else:
+    w = width;
   w = np.vstack([w,w]).T;
   left = center + w * normals;
   right = center - w * normals;

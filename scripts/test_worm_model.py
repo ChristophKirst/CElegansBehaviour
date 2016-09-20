@@ -17,7 +17,7 @@ import worm.model as aw;
 ### Test simple shape properties 
 reload(aw)
 #ws = aw.WormModel(theta = 0.1, width = 10 * (1 - np.exp(-0.1 * (21 - np.abs(2* (np.arange(20)+1) - 21)))));
-ws = aw.WormModel(theta = 0.2, width = None, length = 80);
+ws = aw.WormModel(width = None, length = 80, orientation = 2.1);
 #ws.widen(0.5);
 
 
@@ -25,12 +25,50 @@ ws = aw.WormModel(theta = 0.2, width = None, length = 80);
 plt.figure(1); plt.clf();
 plt.subplot(1,2,1);
 ws.plot()
+plt.axis('equal')
+
+
 plt.xlim(0, 151);
 plt.ylim(0, 151);
 plt.subplot(1,2,2);
 ws.plot(npoints = 2*ws.npoints+1)
 plt.xlim(0, 151);
 plt.ylim(0, 151);
+
+
+
+nn = 180;
+# test theta forwad model
+ws = aw.WormModel(bending=np.ones(nn) * np.pi / nn, width = None, length = 80, orientation = 0, xy = [0,0]);
+plt.figure(1); plt.clf();
+plt.subplot(1,2,1);
+ws.plot()
+plt.axis('equal')
+
+
+ # test shifting spline by a value s
+eta = 0.5;
+theta = ws.bending( points = ws.bending.points + eta);
+alpha =  nn * ws.bending.integral(0.5, 0.5 + eta);
+
+#theta integral
+from curves.spline import Spline;
+phi = nn * ws.bending.integral(np.ones(nn) * 0.5, np.linspace(0, 1, nn)) + ws.orientation;
+sp = Spline(values = phi);
+
+dx =  ws.length * sp.integral(0.5, 0.5 + eta, function = np.cos);
+dy =  ws.length * sp.integral(0.5, 0.5 + eta, function = np.sin);
+
+ws2 = copy.deepcopy(ws);
+ws2.bending.from_values(theta);
+ws2.orientation += alpha;
+ws2.xy += [dx,dy];
+#plt.subplot(1,2,2);
+ws2.plot()
+plt.axis('equal')
+
+
+
 
 
 cl = ws.center_line()

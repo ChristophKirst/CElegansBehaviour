@@ -13,9 +13,9 @@ __docformat__ = 'rest'
 
 import numpy as np
 
-from scipy.interpolate import splrep, splev
+from scipy.interpolate import splrep, splev, splint
 
-from curves import Curve;
+from curves.curve import Curve;
 
 class Spline(Curve):
   """Class for handling spline interpolation and conversion between bspline coefficients and splines"""
@@ -68,13 +68,7 @@ class Spline(Curve):
       else:
         self.knots = np.array(knots, dtype = float);
         self.nparameter = int(knots.shape[0] + 1 + degree);
-        
-      if values is None:
-        self.parameter = np.zeros(self.nparameter);
-      else:
-        self.basis_inv = None;
-        self.from_values(values);
-        
+    
     else:
       self.parameter = np.array(parameter, dtype = float);
       self.nparameter = self.parameter.shape[0];
@@ -87,21 +81,37 @@ class Spline(Curve):
           raise RuntimeError('parameter and knots have inconsistent dimensions %d + 1 + %d != %d' % (self.knots.shape[0], self.degree, self.nparameter)); 
     
     # get all knots
+    self.initialize_all_knots();
+    
+    # calcualte basis matrix
+    self.initialize_basis();       
+    
+    if parameter is None:
+      if values is None:
+        self.from_parameter(np.zeros(self.nparameter));
+      else:
+        self.from_values(values);
+    else:
+      if values is not None:
+        raise RuntimeError('initlializing with parameter and values, only specify one of both!');
+      else:
+        self.from_parameter(parameter);    
+    
+  
+  def initialize_all_knots(self):
+    """Initializes all knots"""
     y = np.linspace(0,1,self.npoints);
     tck = splrep(self.points, y, t = self.knots, task = -1, k = self.degree);
     self.knots_all = tck[0];
     
-    # calcualte basis matrix
+  def initialize_basis(self):
+    """Initializes the basis matrices"""
     self.basis = self.basis_matrix();
-    
     if self.npoints == self.nparameter:
       self.basis_inv = np.linalg.inv(self.basis);
     else:
       self.basis_inv = None;
-    
-    #the values
-    self.values = self.get_values(self.parameter);
-    
+  
   
   def from_values(self, values, points = None):
     """Calcualte the bspline parameter for the data points y
@@ -124,7 +134,7 @@ class Spline(Curve):
         points = self.points;
       tck = splrep(self.points, values, t = self.knots, task = -1, k = self.degree);
       self.parameter = tck[1][:self.nparameter];
-      self.values = self.basis.dot(self.parameter);
+      self.values = values;
  
     return self.parameter; 
   
@@ -196,7 +206,35 @@ class Spline(Curve):
       basis[i] = splev(self.points, tck, der = derivative, ext = 1);
     
     return basis.T;
+  
+  def tck(self):
+    """Returns a tck tuple for use with spline fucntions"""
+    return (self.knots_all, self.parameter, self.degree);
+
+  
+  def integral(self, lo, up, function = None):
+    """Integral between lo and up of the values
     
+    Arguments:
+      lo,up (float or array): lower/upper bound of integration
+      function (function or None): function applied to va;lues before integration
+    
+    Returns:
+      float: the integral
+    """
+    
+    if function is None:
+      tck = (self.knots_all, self.parameter, self.degree);
+    else:
+      values = function(self.values);
+      tck = splrep(self.points, values, t = self.knots, task = -1, k = self.degree);
+    
+    if isinstance(lo, np.ndarray):
+      return np.array([splint(lo[i],up[i],tck) for i in range(len(lo))]);
+    else:
+      return splint(lo,up,tck);
+    
+      
     
 #  def _coxDeBoor(self, u, k, d, knots):
 #      """Spline basis utility to calcualte spline basis at sample points"""
@@ -233,7 +271,7 @@ def test():
   import numpy as np
   import matplotlib.pyplot as plt
   from scipy.interpolate import splrep, splev
-  import curves.splines as sp;
+  import curves.spline as sp;
   reload(sp);
 
   s = sp.Spline(nparameter = 10, npoints = 141, degree = 3);  
