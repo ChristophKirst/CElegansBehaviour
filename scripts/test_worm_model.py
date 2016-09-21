@@ -34,12 +34,13 @@ plt.subplot(1,2,2);
 ws.plot(npoints = 2*ws.npoints+1)
 plt.xlim(0, 151);
 plt.ylim(0, 151);
+plt.axis('equal')
 
 
-
-nn = 180;
 # test theta forwad model
-ws = aw.WormModel(bending=np.ones(nn) * np.pi / nn, width = None, length = 80, orientation = 0, xy = [0,0]);
+reload(aw);
+nn = 21;
+ws = aw.WormModel(theta=np.ones(nn) * np.pi, width = None, length = 80, orientation = 0, xy = [0,0]);
 plt.figure(1); plt.clf();
 plt.subplot(1,2,1);
 ws.plot()
@@ -48,24 +49,33 @@ plt.axis('equal')
 
  # test shifting spline by a value s
 eta = 0.5;
-theta = ws.bending( points = ws.bending.points + eta);
-alpha =  nn * ws.bending.integral(0.5, 0.5 + eta);
+theta = ws.theta( points = ws.theta.points + eta);
+alpha = ws.theta.integrate(0.5, 0.5 + eta);
 
 #theta integral
-from curves.spline import Spline;
-phi = nn * ws.bending.integral(np.ones(nn) * 0.5, np.linspace(0, 1, nn)) + ws.orientation;
+from interpolation.spline import Spline;
+phi = ws.theta.integral();
+phi = phi(np.linspace(0, 1, nn)) - phi(0.5) + ws.orientation;
 sp = Spline(values = phi);
 
-dx =  ws.length * sp.integral(0.5, 0.5 + eta, function = np.cos);
-dy =  ws.length * sp.integral(0.5, 0.5 + eta, function = np.sin);
+dx =  ws.length * sp.integrate(0.5, 0.5 + eta, function = np.cos);
+dy =  ws.length * sp.integrate(0.5, 0.5 + eta, function = np.sin);
 
 ws2 = copy.deepcopy(ws);
-ws2.bending.from_values(theta);
+ws2.theta.from_values(theta);
 ws2.orientation += alpha;
 ws2.xy += [dx,dy];
 #plt.subplot(1,2,2);
 ws2.plot()
 plt.axis('equal')
+
+
+ws3 = copy.deepcopy(ws);
+ws3.move_forward(0.5);
+plt.subplot(1,2,2);
+ws.plot()
+ws3.plot();
+plt.axis('equal');
 
 
 

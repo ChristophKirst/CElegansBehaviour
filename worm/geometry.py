@@ -2,7 +2,7 @@
 """
 Worm Geometry
 
-Routines to detect and process and manipulate worm shapes
+collection of routines to detect, convert and manipulate worm shapes features
 
 See also: 
   :mod:`model`
@@ -24,8 +24,9 @@ from scipy.interpolate import splev, splprep, UnivariateSpline
 #from scipy.interpolate import splrep, dfitpack
 from scipy.spatial import Voronoi
 
+from interpolation.spline import Spline
+from interpolation.resampling import resample as resample_curve
 
-from signalprocessing.resampling import resample_curve, resample_data
 from signalprocessing.peak_detection import find_peaks
 
 from imageprocessing.contours import detect_contour, sort_points_to_line, inside_polygon;
@@ -103,7 +104,6 @@ def center_from_sides_vonroi(left, right, npoints = all, nsamples = all, resampl
 
   return center, width
   
-
 
 def center_from_sides_projection(left, right, npoints = all, nsamples = all, resample = False, with_width = False, nneighbours = all, smooth = 0):
   """Finds middle line between the two side curves using projection method
@@ -211,7 +211,7 @@ def center_from_sides_projection(left, right, npoints = all, nsamples = all, res
 
 
 
-def center_from_sides_mean(left, right, npoints = all, nsamples = all, resample = False, with_width = False, smooth = 0):
+def center_from_sides_mean(left, right, npoints = all, nsamples = all, resample = False, with_width = False):
   """Finds middle line between the two side curves by simply taking the mean
   
   Arguments:
@@ -219,7 +219,6 @@ def center_from_sides_mean(left, right, npoints = all, nsamples = all, resample 
     npoints (int or all): number of points of the mid line
     nsamples (int or all): number of sample points to contruct midline
     with_width (bool): if True also return estimated width
-    nneighbours (int or all): number of neighbouring points to include for projection
   
   Returns:
     nx2 array of midline vertices
@@ -252,6 +251,7 @@ def center_from_sides_mean(left, right, npoints = all, nsamples = all, resample 
     return center;
 
 
+
 def center_from_sides(left, right, npoints = all, nsamples = all, resample = False, with_width = False, smooth = 0,  nneighbours = all, method = 'projection'):
   """Finds middle line between the two side curves
   
@@ -261,7 +261,7 @@ def center_from_sides(left, right, npoints = all, nsamples = all, resample = Fal
     nsamples (int or all): number of sample points to contruct midline
     with_width (bool): if True also return estimated width
     nneighbours (int or all): number of neighbouring points to include for projection
-    method ({'projection', 'vonroi'}): the method to calculate midline
+    method ({'projection', 'vonroi', 'mean'}): the method to calculate midline
   
   Returns:
     nx2 array of midline vertices
@@ -269,17 +269,113 @@ def center_from_sides(left, right, npoints = all, nsamples = all, resample = Fal
   
   if method == 'projection':
     return center_from_sides_projection(left, right, npoints = npoints, nsamples = nsamples, resample = resample, with_width = with_width, nneighbours = nneighbours, smooth = smooth);
-  else:
+  elif method == 'vonroi':
     return center_from_sides_vonroi(left, right, npoints = npoints, nsamples = nsamples, resample = resample, with_width = with_width, smooth = smooth);
+  else:
+    return center_from_sides_mean(left, right, npoints = npoints, nsamples = nsamples, resample = resample, with_width = with_width);
 
 
-  
   
 ##############################################################################
 ### Center Line Bending
+
+
+
+def lift_cirular(phi):
+  """Lifts circular/angular valued curve to avoid discontinuities, assumes phi in range [-pi,pi]"""
+  phip = phi >= 0;
+  phipi = np.where(phip)[0] - 1;
+  if len(phipi) > 0 and phipi[0] < 0:
+    phipi = phipi[1:];
+  
+  phin = phi < 0;
+  phini = np.where(phin)[0] - 1;
+  if len(phini) > 0 and phini[0] < 0:
+    phini = phini[1:];  
+    
+  cp = np.where(phip[phini])[0];
+  cn = np.where(phin[phipi])[0];
+  cp = phini[cp];
+  cn = phipi[cn];
+
+  lift = np.zeros(phi.shape);
+  for i in cp:
+    lift[i+1:] += 2 * np.pi;
+  for i in cn:
+    lift[i+1:] -= 2 * np.pi;
+    
+  return phi + lift;
+
+
   
 def theta_from_center_discrete(center, npoints = all, nsamples = all, resample = False, smooth = 0):
   """Calculates bending angle theta along the center line using discrete mesh
+  
+  Arguments:
+    center (nx2 array): center line
+    npoints (int or all): number of final sample points for the center line
+    nsamples (int) or all): number of sample points to construct theta
+    resmaple (bool): forces uniform resampling if True
+    smooth (float): smoothing factor for final sampling
+  
+  Returns:
+    array: uniformly sampled bending angle along the center line
+    float: absolute orientation with respect to vertical reference [1,0] at center of the worm
+  
+  Note:
+    There are npoints - 2 angles along the center line, so the returned array 
+    will be of length npoints-2.
+    The returned points are samples of the deivative of the angle of the tangent 
+    :math:`\\theta`: along the curve.
+    The theta values are thus obtained via :math:`\that(s) \\approx = \\Delta \theta / \\Delta s`  
+    and thus will be rescaled by the inverse 1/(npoints-2).
+    The rescaling ensures that the spline represenation and integration return
+    theta and phi.
+  """
+  
+  nc = center.shape[0];
+  
+  if npoints is all:
+    npoints = nc;
+  if nsamples is all:
+    nsamples = nc;
+  n2 = (nsamples-1)//2;
+  n2a= (nsamples-2)//2;
+  
+  # resample center lines 
+  if nsamples != nc or resample:
+    centercurve = resample_curve(center, nsamples);
+  else:
+    centercurve = center;
+
+  #vectors along center line
+  centervec = np.diff(centercurve, axis = 0);
+  
+  # orientation
+  t0 = np.array([1,0], dtype = float); #vertical reference
+  t1 = (centervec[n2] + centervec[n2a])/2.0;
+  orientation = np.mod(np.arctan2(t0[0], t0[1]) - np.arctan2(t1[0], t1[1]) + np.pi, 2 * np.pi) - np.pi;
+  
+  # xy
+  xy = centercurve[n2];
+  
+  # thetas
+  theta = np.arctan2(centervec[:-1,0], centervec[:-1,1]) - np.arctan2(centervec[1:,0], centervec[1:,1]);
+  theta = np.mod(theta + np.pi, 2 * np.pi) - np.pi;
+  theta *= (nsamples-1);
+  
+  #length
+  length = np.linalg.norm(centervec, axis = 1).sum();
+
+  if npoints != nsamples or resample:
+    theta = resample_curve(theta, npoints - 2, smooth = smooth);
+  
+  return theta, orientation, xy, length
+
+
+
+def theta_from_center_spline(center, npoints = all, nsamples = all, resample = False, smooth = 0):
+  """Calculates bending angle theta along the center line using splines
   
   Arguments:
     center (nx2 array): center line
@@ -316,28 +412,29 @@ def theta_from_center_discrete(center, npoints = all, nsamples = all, resample =
 
   #vectors along center line
   centervec = np.diff(centercurve, axis = 0);
-  
-  # orientation
-  t0 = np.array([1,0], dtype = float); #vertical reference
-  t1 = centervec[n2];
-  orientation = np.mod(np.arctan2(t0[0], t0[1]) - np.arctan2(t1[0], t1[1]) + np.pi, 2 * np.pi) - np.pi;
-  
+    
   # xy
   xy = centercurve[n2];
   
-  # thetas
-  theta = np.arctan2(centervec[:-1,0], centervec[:-1,1]) - np.arctan2(centervec[1:,0], centervec[1:,1]);
-  theta = np.mod(theta + np.pi, 2 * np.pi) - np.pi;
-  
   #length
   length = np.linalg.norm(centervec, axis = 1).sum();
-
-  if npoints != nsamples or resample:
-    theta = resample_data(theta, npoints - 2, smooth = smooth);
+  
+  # thetas
+  phi = np.arctan2(centervec[:-1,0], centervec[:-1,1]);
+  phi = lift_cirular(phi);
+  phisp = Spline(phi);
+  
+  theta = phisp.derivative();
+  
+  orientation = float(theta(0.5));
+  
+  points = np.linspace(0,1,npoints-2);
+  theta = theta(points);
   
   return theta, orientation, xy, length
 
- 
+
+
 def center_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False, smooth = 0, with_normals = False):
   """Constructs center line from theta on discrete mesh
   
@@ -353,7 +450,9 @@ def center_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, n
     npointsx2 array: the sample points along the center line
   
   Note:
-    The theta sample length is 2 less than the curve sample length
+    The theta sample length is 2 less than the curve sample length.
+    The absolute angle is integral of theta so that for discrete integration 
+    we multiply this curve with the discretized smaple length of 1/
   """
 
   nt = theta.shape[0];
@@ -362,38 +461,38 @@ def center_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, n
     npoints = nt + 2;
   if nsamples is all:
     nsamples = nt + 2;
-  n2 = (nsamples-1)//2; 
+  n2 = (nsamples-1)//2;
+  n2a= (nsamples-2)//2;
   
   # resample center lines 
   if nsamples != nt + 2 or resample:
-    itheta = resample_data(theta, nsamples - 2);
+    itheta = resample_curve(theta, nsamples - 2);
   else:
     itheta = theta;
   
   #cos/sin
-  itheta = np.cumsum(np.hstack([0, itheta]));
-  itheta += orientation - itheta[n2];
+  delta = 1.0 / (nsamples-1); # Delta s for discrete integration nsample points -> nsample-1 segments
+  itheta = np.cumsum(np.hstack([0, itheta])) * delta;
+  itheta += orientation - (itheta[n2]+itheta[n2a])/2.0;
   cos = np.cos(itheta);
   sin = np.sin(itheta);
   
   x = np.cumsum(cos);
   y = np.cumsum(sin);
-  center = np.vstack([[0,0], np.vstack([x,y]).T]);
-  center = float(length) / (nsamples-1) * center;
-  center += xy - center[n2];
+  center = np.vstack([x,y]).T;
+  center = np.vstack([[0,0], center]);
+  center = float(length) * delta * center;
+  center += xy - (center[n2] + center[n2a+1])/2.0;
   
   if npoints != nsamples or resample:
     center = resample_curve(center, npoints, smooth = smooth);
   
   if with_normals:
     if npoints != nsamples:
-      itheta = resample_data(itheta, npoints - 1);
-    
-    print itheta.shape
+      itheta = resample_curve(itheta, npoints - 1);
     dtheta = np.diff(itheta);
     itheta += np.pi/2;
     itheta = np.hstack([itheta, itheta[-1]]);
-    print itheta.shape
     itheta[1:-1] -= dtheta / 2;
     return center, np.vstack([np.cos(itheta), np.sin(itheta)]).T;
   else:
@@ -404,7 +503,7 @@ def center_from_theta_spline(theta, orientation = 0, xy = [0,0], length = 1, npo
   """Constructs center line from theta via spline integration
   
   Arguments:
-    theta (nx2 array): angles along center line
+    theta (nx2 array or Spline): angles along center line
     length (float): length of center line
     npoints (int or all): number of final smaple points along center line
     nsamples (int or all): number of smaple points to construct center line
@@ -414,65 +513,57 @@ def center_from_theta_spline(theta, orientation = 0, xy = [0,0], length = 1, npo
   Returns
     npointsx2 array: the sample points along the center line
   """
-
-  nt = theta.shape[0];
   
-  if npoints is all:
-    npoints = nt + 2;
+  if isinstance(theta, np.ndarray):
+    nt = theta.shape[0];  
+    if npoints is all:
+      npoints = nt + 2;
+    theta = np.hstack([theta]);
+    theta = Spline(theta);
+  
   if nsamples is all:
-    nsamples = nt + 2;
-  n2 = (nsamples-1)//2; 
+    nsamples = npoints; 
   
-  # resample center lines 
-  if nsamples != nt + 2 or resample:
-    itheta = resample_data(theta, nsamples - 2);
-  else:
-    itheta = theta;
+  s = np.linspace(0,1,nsamples)
+  istheta = theta.integral();
+  ithetac = float(istheta(0.5));
+  itheta = istheta(s); 
+  #itheta = np.hstack([0, itheta]);
+  itheta += orientation - ithetac;
   
-  #cos/sin
-  itheta = np.cumsum(np.hstack([0, itheta, 0]));
-  itheta += orientation - itheta[n2];
   cos = np.cos(itheta);
   sin = np.sin(itheta);
   
-  #generate spline
-  s = np.linspace(0,1,nsamples);
-  xs = UnivariateSpline(s, cos);
-  ys = UnivariateSpline(s, sin);
-  #xtck = splrep(s, cos);
-  #ytck = splrep(s, sin);
+  # integrate
+  #s = np.linspace(0,1,nsamples-1);
+  x = UnivariateSpline(s, cos).antiderivative();
+  y = UnivariateSpline(s, sin).antiderivative();
   
-  #integrate to center line
-  x = [xs.integral(s[i],s[i+1]) for i in range(nsamples-1)];
-  y = [ys.integral(s[i],s[i+1]) for i in range(nsamples-1)];
-  #x = [dfitpack.splint(*xtck, a = s[i], b = s[i+1]) for i in range(nsamples-1)];
-  #y = [dfitpack.splint(*ytck, a = s[i], b = s[i+1]) for i in range(nsamples-1)];
-  center = np.vstack([[0,0],  np.vstack([x,y]).T]);
+  #s = np.linspace(0,1,nsamples);
+  center = np.vstack([x(s),y(s)]).T;
+  #center = np.vstack([[0,0], center]);
   center = float(length) * center;
-  center = np.cumsum(center, axis = 0);
-  #c,s = np.cos(orientation), np.sin(orientation);
-  #rot = np.matrix([[c, -s], [s, c]])
-  #center = center.dot(rot);
-  center += xy - center[n2];
+  center += xy - np.array([x(0.5), y(0.5)]);
   
   if npoints != nsamples or resample:
     center = resample_curve(center, npoints, smooth = smooth);
   
   if with_normals:
     if npoints != nsamples:
-      itheta = resample_data(itheta, npoints);
-    dtheta = np.diff(itheta);
-    itheta += np.pi/2;
-    #itheta = np.hstack([itheta, itheta[-1]]);
-    itheta[1:-1] -= dtheta / 2;
+      itheta = istheta(np.linspace(0,1,npoints));
+      itheta += orientation - ithetac;
+    #dtheta = np.diff(itheta);
+    #itheta += np.pi/2;
+    #itheta[1:-1] -= dtheta / 2;
     return center, np.vstack([np.cos(itheta), np.sin(itheta)]).T;
   else:
     return center;
 
+#center_from_theta = center_from_theta_discrete;
+#theta_from_center = theta_from_center_discrete;
+
 center_from_theta = center_from_theta_discrete;
 theta_from_center = theta_from_center_discrete;
-
-
 
 
 def shape_from_theta_discrete(theta, width, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False, smooth = 0, with_normals = False):
@@ -504,7 +595,7 @@ def shape_from_theta_discrete(theta, width, orientation = 0, xy = [0,0], length 
 
   #w = np.hstack([0, width, 0]);  # assume zero width at head an tail
   if width.shape[0] != npoints:
-    w = resample_data(width, npoints = npoints);
+    w = resample_curve(width, npoints = npoints);
   else:
     w = width;
   w = np.vstack([w,w]).T;
@@ -517,39 +608,93 @@ def shape_from_theta_discrete(theta, width, orientation = 0, xy = [0,0], length 
     return center, left, right
   
 
-shape_from_theta = shape_from_theta_discrete;
 
+def shape_from_theta_spline(theta, width, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False, smooth = 0, with_normals = False):
+  """Constructs center line from theta on discrete mesh
+  
+  Arguments:
+    theta (nx2 array): angles along center line
+    width (n array): width profile
+    length (float): length of center line
+    npoints (int or all): number of final smaple points along center line
+    nsamples (int or all): number of smaple points to construct center line
+    resample (bool): for resampling if True
+    smooth (float): smoothing factor for final sampling
+
+  Returns
+    array: the sample points along the center line
+    array: the sample points along the left side
+    array: the sample points along the right side
+    array: the normal vector along the center points (if with_normals is True)
+  
+  Note:
+    The theta sample length is 2 less than the curve sample length
+    Returned normals
+  """
+
+  center, normals = center_from_theta_spline(theta, orientation = orientation, xy = xy, length = length, 
+                                             npoints = npoints, nsamples = nsamples, resample = resample, smooth = smooth, 
+                                             with_normals = True)
+
+  #w = np.hstack([0, width, 0]);  # assume zero width at head an tail
+  if width.shape[0] != center.shape[0]:
+    w = resample_curve(width, npoints = center.shape[0]);
+  else:
+    w = width;
+  w = np.vstack([w,w]).T;
+  left = center + w * normals;
+  right = center - w * normals;
+
+  if with_normals:
+    return center, left, right, normals
+  else:
+    return center, left, right
+
+
+shape_from_theta = shape_from_theta_discrete;
+#shape_from_theta = shape_from_theta_spline;
 
 
 
 def test_theta():
   import numpy as np
   import matplotlib.pyplot as plt;
-  import worm.shape as sh;
+  import worm.geometry as sh;
   reload(sh);
   
-  th = np.ones(10) * 0.1;
+  #test lift
+  phi = np.array([0,1,2,3,-3, -2, -1, -2, -3, 3, 2]);
+  phil = sh.lift_cirular(phi);
+  plt.figure(100); plt.clf();
+  plt.plot(phi);
+  plt.plot(phil);
+
+  #test center from theta
+  reload(sh);
+  nn = 152;
+  th = np.ones(nn) * np.pi;
+  th2 = np.sin(np.linspace(0, 2, nn)) * np.pi;  
   c = sh.center_from_theta_discrete(th);
-  c2 = sh.center_from_theta_discrete(th, orientation = np.pi/2, xy = [1,1]);
-  th = np.sin(np.linspace(0, 2, 10)) * 1;  
-  c3 = sh.center_from_theta_discrete(th, orientation = -np.pi, xy = [-1,-1]);
+  c2 = sh.center_from_theta_discrete(th, orientation =-np.pi/2, xy = [1,1]);
+  c3 = sh.center_from_theta_discrete(th2, orientation = -np.pi, xy = [-1,-1]);
   
   plt.figure(1); plt.clf();
   plt.plot(c[:,0], c[:,1]);
   plt.plot(c2[:,0], c2[:,1]);
   plt.plot(c3[:,0], c3[:,1]);
   
+  # center form theta spline
   reload(sh);
-  th = np.ones(10) * 0.1;
-  c = sh.center_from_theta_spline(th);
-  c2 = sh.center_from_theta_spline(th, orientation = np.pi/2, xy = [1,1]);
-  th = np.sin(np.linspace(0, 2, 10)) * 1;  
-  c3 = sh.center_from_theta_spline(th, orientation = -np.pi, xy = [-1,-1]);
+  sc = sh.center_from_theta_spline(th);
+  sc2 = sh.center_from_theta_spline(th, orientation = -np.pi/2, xy = [1,1]);
+  sc3 = sh.center_from_theta_spline(th2, orientation = -np.pi, xy = [-1,-1]);
   
   #plt.figure(2); plt.clf();
-  plt.plot( c[:,0],  c[:,1]);
-  plt.plot(c2[:,0], c2[:,1]);
-  plt.plot(c3[:,0], c3[:,1]);
+  plt.plot( sc[:,0],  sc[:,1]);
+  plt.plot(sc2[:,0], sc2[:,1]);
+  plt.plot(sc3[:,0], sc3[:,1]);
+  plt.axis('equal')
+  plt.tight_layout();
   
   from utils.timer import timeit
   @timeit
@@ -565,6 +710,9 @@ def test_theta():
 
   #test inversions
   reload(sh);
+  nn = 11;
+  th = np.ones(nn) * np.pi;
+  th = np.sin(np.linspace(0, 2, nn)) * np.pi;  
   c = sh.center_from_theta_discrete(th, orientation = -np.pi, xy = [-1,-1]); 
   thi, oi, xyi, li  = sh.theta_from_center_discrete(c)
   ci = sh.center_from_theta_discrete(thi, oi, xyi, li);
@@ -573,10 +721,14 @@ def test_theta():
   np.allclose([-1,-1], xyi);
   np.allclose(1, li)
   np.allclose(c,ci)
+  
+  plt.figure(1); plt.clf();
+  plt.plot(c[:,0], c[:,1]);
+  plt.plot(ci[:,0], ci[:,1]);
 
   # test normals
   reload(sh);
-  th = np.sin(np.linspace(0, 2, 8)) * 0.3;  
+  th = np.sin(np.linspace(0, 2, 8)) * 3;  
   c,n = sh.center_from_theta(th, orientation = -np.pi, xy = [-1,-1], length = 10, with_normals=True);
   plt.figure(2); plt.clf();
   plt.plot(c[:,0], c[:,1]);
@@ -589,7 +741,7 @@ def test_theta():
   # test shape from theta
   reload(sh);
   th = np.sin(np.linspace(0, 2, 8)) * 0.3;  
-  width = 1-np.cos(np.linspace(0, 2*np.pi, 10))[1:-1];
+  width = 1-np.cos(np.linspace(0, 2*np.pi, 10));
   center, left, right = sh.shape_from_theta(th, width, orientation = -np.pi, xy = [-1,-1], length = 10, with_normals=False)
   
   plt.figure(13); plt.clf();
@@ -601,8 +753,10 @@ def test_theta():
   #how does center line recovery work
   c2 = sh.center_from_sides(left, right, nneighbours = 30, nsamples = 100);  
   c3 = sh.center_from_sides_mean(left, right);
-  plt.plot(c2[:,0], c2[:,1]);
   plt.plot(c3[:,0], c3[:,1]);
+  plt.plot(c2[:,0], c2[:,1], 'r');
+
+
 
 ##############################################################################
 ### Shape Detection from Image 
@@ -816,8 +970,8 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
 def test():
   import numpy as np
   import matplotlib.pyplot as plt
-  import worm.shape as shp
-  reload(shp)
+  import worm.geometry as wgeo
+  reload(wgeo)
   
   t = np.linspace(0,10,50);
   aline = np.vstack([t, np.sin(t)+0.5]).T;
@@ -826,17 +980,22 @@ def test():
   aline[0] = bline[0];  
   aline[-1] = bline[-1];
   
-  cline = shp.center_from_sides(aline, bline, nsamples = 50, npoints = 50, smooth = 0.1, resample = True, method = 'projection');
+  cline = wgeo.center_from_sides(aline, bline, nsamples = 50, npoints = 50, smooth = 0.1, resample = True, method = 'projection');
   
   plt.figure(1); plt.clf();
   plt.plot(aline[:,0], aline[:,1]);
   plt.plot(bline[:,0], bline[:,1]);
   plt.plot(cline[:,0], cline[:,1]);
   
-  reload(shp)
+  reload(wgeo)
   import analysis.experiment as exp;
   img = exp.load_img(t = 100000);
-  shp.shape_from_image(img, npoints = 15, verbose = True)  
+  wgeo.shape_from_image(img, npoints = 15, verbose = True)
+  
+  
+  
+  ## 
+  wgeo.theta_from_center_spline()
   
 if __name__ == "__main__":
   test_theta();

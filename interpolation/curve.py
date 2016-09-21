@@ -3,7 +3,7 @@
 Curve module to handle mappings from parameter to curve spaces
 
 This module provides a base class to handle curves and their parameterization
-used to capter the pose of worms
+used to capture the center line of a worm and its bending 
 """
 
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
@@ -12,7 +12,7 @@ __docformat__ = 'rest'
 
 
 class Curve:
-  """Class providing basic interface to a parameterized curve"""
+  """Basic interface to a parameterized curve"""
   
   def __init__(self, *args, **kwargs):
     """Constructor """
@@ -21,22 +21,6 @@ class Curve:
     self.npoints = 0;
     self.points = None;
     self.values = None;
-  
-  def get_nparameter(self):
-    """Number of parameter to describe curve"""
-    return self.nparameter;    
-    
-  def get_parameter(self):
-    """Parameter of the curve"""
-    return self.parameter;
-    
-  def get_npoints(self):
-    """Number of sample points for the curve values"""
-    return self.npoints;
-  
-  def get_points(self):
-    """Coordinate points along which the curve is sampled"""
-    return self.points;
   
   def get_values(self, points = None, **kwargs):
     """Returns the values of the curve at the sample points"""
@@ -49,11 +33,11 @@ class Curve:
   def from_parameter(self, parameter, **kwargs):
     """Updates the parameter of the curve given new parameter"""
     pass
+  
+  def integral(self):
+    """Returns the integral of the curve"""
+    pass
     
-#  def to_shape(self, points = None, width = None, with_normals = False):
-#    """Returns the boundary curves af the shape with a width and the curve as center line"""
-#    return None;
-#    
-#  def from_shape(self, left, right, points = None, with_width = False):
-#    """Determines parameter of the center curve given the left and right boundary curves"""
-#    return None;
+  def derivative(self):
+    """Returns the derivative of the curve"""
+    pass
