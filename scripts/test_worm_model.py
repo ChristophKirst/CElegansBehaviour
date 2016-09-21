@@ -75,13 +75,13 @@ ws3.move_forward(0.5);
 plt.subplot(1,2,2);
 ws.plot()
 ws3.plot();
-plt.axis('equal');
+p = plt.axis('equal');
 
 
 
 
 
-cl = ws.center_line()
+cl = ws.center()
 
 plt.figure(1); plt.clf();
 plt.scatter(cl[:,0], cl[:,1])
@@ -92,6 +92,7 @@ plt.figure(2); plt.clf();
 plt.scatter(poly[:,0], poly[:,1])
 
 
+ws.xy = [71,71];
 mask = ws.mask();
 plt.figure(1); plt.clf();
 plt.subplot(1,3,1)
@@ -107,12 +108,19 @@ plt.imshow(phi < 0)
 
 ### Test deformations
 reload(aw);
-ws = aw.WormModel(theta = 0.1, width = None);
+nn = 21;
+ws = aw.WormModel(theta = np.ones(nn), width = None, length = 100);
 
 def plot_worms(ws, ws2):
   plt.figure(1); plt.clf();
   ws.plot();
   ws2.plot(ccolor = 'magenta')
+  plt.axis('equal')
+
+
+ws2 = copy.deepcopy(ws);
+ws2.move_forward(-0.7);
+plot_worms(ws, ws2);
 
 
 ws2 = copy.deepcopy(ws);
@@ -127,16 +135,8 @@ ws2 = copy.deepcopy(ws);
 ws2.rotate(np.pi/2);
 plot_worms(ws, ws2);
 
-reload(aw);
-ws = aw.WormModel(theta = 0.1, width = None, npoints = 21);
 
-plt.figure(10); plt.clf();
-ws.plot();
-plt.xlim(55, 95); plt.ylim(55,95)
 
-ws2 = copy.deepcopy(ws);
-ws2.move_forward(-9, straight = True);
-plot_worms(ws, ws2);
 
 
 for s in np.linspace(0, 40, 60):
@@ -163,7 +163,16 @@ ws2.bend(0.5, exponent  = 5, head = False);
 plot_worms(ws, ws2);
 
 
+
 ### Generate from image 
+import numpy as np
+import matplotlib.pyplot as plt;
+
+import copy
+import time
+
+import worm.model as aw;
+
 reload(aw);
 
 import analysis.experiment as exp
@@ -173,8 +182,8 @@ import scipy.ndimage.filters as filters
 img = exp.load_img(wid = 80, t= 500000);
 imgs = filters.gaussian_filter(np.asarray(img, float), 1.0);
 
-ws = aw.WormModel();
-ws.from_image(imgs, verbose = True);
+ws = aw.WormModel(nparameter = 20, npoints = 31);
+ws.from_image(img, verbose = True, threshold_factor = .95, smooth = 1.0, ncontour = 100, sigma = 1.0, nneighbours = 5);
 
 plt.figure(1); plt.clf();
 ws.plot(image = imgs)
@@ -182,7 +191,7 @@ ws.plot(image = imgs)
 
 ### Self intersections
 
-ws = aw.WormModel(theta = np.hstack([np.linspace(0.1, 0.8, 10), np.linspace(0.9, 0.1, 11)]) , length = 150);
+ws = aw.WormModel(theta = np.hstack([np.linspace(0.1, 0.8, 10)*13,13* np.linspace(0.9, 0.1, 11)]) , length = 150);
 
 mask = ws.mask();
 phi = ws.phi();

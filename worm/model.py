@@ -71,7 +71,7 @@ class WormModel(object):
   """Class modeling the shape and posture and motion of a worm"""
   
   def __init__(self, length = 40, xy = [75, 75], orientation = 0,
-               theta = None, width = None, npoints = 21):
+               theta = None, width = None, npoints = 21, nparameter = 10):
     """Constructor of WormModel
     
     Arguments:
@@ -92,21 +92,21 @@ class WormModel(object):
     
     
     if theta is None:
-      self.theta = Spline(npoints = self.npoints - 2, nparameter = 10, degree = 3);
+      self.theta = Spline(npoints = self.npoints - 2, nparameter = nparameter, degree = 3);
     elif isinstance(theta, Curve):
       self.theta = theta;
     else:
-      self.theta = Spline(values = theta, npoints = 21, nparameter = 10, degree = 3);
+      self.theta = Spline(values = theta, npoints = self.npoints, nparameter = nparameter, degree = 3);
     
     self.npoints = self.theta.npoints + 2;    
     
     if width is None:
       width = self.default_width();
-      self.width = Spline(values = width, npoints = self.npoints, nparameter = 10, degree = 3);
+      self.width = Spline(values = width, npoints = self.npoints, nparameter = nparameter, degree = 3);
     elif isinstance(width, Curve):
       self.width = width;
     else:
-      self.width = Spline(values = width, nparameter = 10, degree = 3);
+      self.width = Spline(values = width, nparameter = nparameter, degree = 3);
     
     assert self.npoints == self.width.npoints;      
 
@@ -208,7 +208,7 @@ class WormModel(object):
       nsamples (int or all): number of intermediate samples points
     """
     
-    theta, orientation, xy, length = wormgeo.theta_from_center(center, npoints = self.theta.npoints, 
+    theta, orientation, xy, length = wormgeo.theta_from_center(center, npoints = self.npoints, 
                                                                nsamples = nsamples, resample=False, smooth=0);
     
     self.theta.from_values(theta);
@@ -221,13 +221,13 @@ class WormModel(object):
 
     
   def from_image(self, image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
-                       npoints_contour = 100, delta = 0.3, smooth = 1.0,
+                       ncontour = 100, delta = 0.3, smooth = 1.0, nneighbours = 4,
                        verbose = False, save = None):
     
     success, center, left, right, width = wormgeo.shape_from_image(image, 
                              sigma = sigma, absolute_threshold = absolute_threshold,
-                             threshold_factor = threshold_factor, npoints_contour = npoints_contour, 
-                             delta = delta, smooth = smooth,
+                             threshold_factor = threshold_factor, ncontour = ncontour, 
+                             delta = delta, smooth = smooth, nneighbours = nneighbours,
                              npoints = self.npoints, 
                              verbose = verbose, save = save);
     
@@ -330,7 +330,7 @@ class WormModel(object):
     """
     
     mask = np.zeros(tuple(size));
-    left, right = self.sides();
+    left, right = self.shape();
     
     for i in range(self.npoints-1):
       poly = np.array([left[i,:], right[i,:], right[i+1,:], left[i+1,:]], dtype = np.int32)
@@ -454,13 +454,11 @@ class WormModel(object):
 #    self.from_center(cline, self.width);
   
   
-  def move_forward(self, distance, smooth = 1.0, straight = True):
+  def move_forward(self, distance):
     """Move worm peristaltically forward
     
     Arguments:
       distance (number): distance to move forward in units of the worm length
-      smooth (number): smoothness of the interpolation
-      straight (bool): if True extrapolated points move straight
       
     Note:
       The head is first point in center line and postive distances will move the
@@ -470,15 +468,23 @@ class WormModel(object):
     #integrated angles
     phii = self.theta.integral();
     phi = phii(np.linspace(0, 1, self.npoints)) - phii(0.5) + self.orientation;
-    sp = Spline(values = phi);
+    phis = Spline(values = phi);
     
     #xy shift
-    dx =  self.length * sp.integrate(0.5, 0.5 + distance, function = np.cos);
-    dy =  self.length * sp.integrate(0.5, 0.5 + distance, function = np.sin);
+    dd = max(min(distance, 0.5), -0.5);
+    dp = distance - dd;
+    dx =  self.length * phis.integrate(0.5, 0.5 + distance, function = np.cos);
+    dy =  self.length * phis.integrate(0.5, 0.5 + distance, function = np.sin);
+    if dp > 0:
+      dx += np.cos(phis(1.0)) * dp * self.length;
+      dy += np.sin(phis(1.0)) * dp * self.length;
+    elif dp < 0:
+      dx += np.cos(phis(0.0)) * dp * self.length;
+      dy += np.sin(phis(0.0)) * dp * self.length;
     self.xy += [dx,dy];
 
     #alpha = self.theta.integrate(0.5, 0.5 + distance);
-    alpha = float(phii(0.5+distance) - phii(0.5));
+    alpha = float(phii(0.5 + dd) - phii(0.5));
     self.orientation += alpha;
 
     #shift theta

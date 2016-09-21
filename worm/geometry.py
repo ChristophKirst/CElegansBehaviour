@@ -594,13 +594,13 @@ def shape_from_theta_discrete(theta, width, orientation = 0, xy = [0,0], length 
                                                with_normals = True)
 
   #w = np.hstack([0, width, 0]);  # assume zero width at head an tail
-  if width.shape[0] != npoints:
-    w = resample_curve(width, npoints = npoints);
+  if width.shape[0] != center.shape[0]:
+    w = resample_curve(width, npoints = center.shape[0]);
   else:
     w = width;
   w = np.vstack([w,w]).T;
-  left = center + w * normals;
-  right = center - w * normals;
+  left  = center + 0.5 * w * normals;
+  right = center - 0.5 * w * normals;
 
   if with_normals:
     return center, left, right, normals
@@ -642,8 +642,8 @@ def shape_from_theta_spline(theta, width, orientation = 0, xy = [0,0], length = 
   else:
     w = width;
   w = np.vstack([w,w]).T;
-  left = center + w * normals;
-  right = center - w * normals;
+  left  = center + 0.5 * w * normals;
+  right = center - 0.5 * w * normals;
 
   if with_normals:
     return center, left, right, normals
@@ -762,7 +762,7 @@ def test_theta():
 ### Shape Detection from Image 
 
 def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
-                     ncontour = 100, delta = 0.3, smooth = 1.0,
+                     ncontour = 100, delta = 0.3, smooth = 1.0, nneighbours = 4,
                      npoints = 21, nsamples = all,
                      verbose = False, save = None):
   """Detect non self intersecting shapes of the the worm
@@ -775,6 +775,7 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
     ncontour (int): number of vertices in the contour
     delta (float): min height of peak in curvature to detect the head
     smooth (float): smoothing to use for the countour 
+    nneighbours (int): number of neighbours to consider for midline detection
     npoints (int): number of vertices in the final center and side lines of the worm
     nsamples (int): number of vertices in for center line detection
     verbose (bool): plot results
@@ -874,7 +875,7 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
   
   # midline 
   #xm = (x1 + x2) / 2; ym = (y1 + y2) / 2; # simple
-  center, width = center_from_sides_projection(left, right, nsamples = nsamples, with_width = True);
+  center, width = center_from_sides_projection(left, right, nsamples = nsamples, with_width = True, nneighbours = nneighbours);
   
   
   # worm center
@@ -919,6 +920,7 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
     n2 = (npoints-1)//2;
     plt.scatter(center[n2,0], center[n2,1], color = 'k')
     plt.scatter(x[imax], y[imax], s=150, color='r');
+    plt.contour(imgs, levels = [level])
     plt.title('shape detection')
     
     #plot width profile    
