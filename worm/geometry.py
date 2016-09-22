@@ -440,8 +440,10 @@ def center_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, n
   
   Arguments:
     theta (nx2 array): angles along center line
+    orientation (float): absolute orientation of the center line
+    xy (2 array): absolute position of the center line
     length (float): length of center line
-    npoints (int or all): number of final smaple points along center line
+    npoints (int or all): number of final sample points along center line
     nsamples (int or all): number of smaple points to construct center line
     resample (bool): for resampling if True
     smooth (float): smoothing factor for final sampling
@@ -497,15 +499,17 @@ def center_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, n
     return center, np.vstack([np.cos(itheta), np.sin(itheta)]).T;
   else:
     return center;
-  
+
 
 def center_from_theta_spline(theta, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False, smooth = 0, with_normals = False):
   """Constructs center line from theta via spline integration
   
   Arguments:
     theta (nx2 array or Spline): angles along center line
+    orientation (float): absolute orientation of the center line
+    xy (2 array): absolute position of the center line
     length (float): length of center line
-    npoints (int or all): number of final smaple points along center line
+    npoints (int or all): number of final sample points along center line
     nsamples (int or all): number of smaple points to construct center line
     resample (bool): for resampling if True
     smooth (float): smoothing factor for final sampling
@@ -564,6 +568,65 @@ def center_from_theta_spline(theta, orientation = 0, xy = [0,0], length = 1, npo
 
 center_from_theta = center_from_theta_discrete;
 theta_from_center = theta_from_center_discrete;
+
+
+
+def normals_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False):
+  """Constructs normals from theta on discrete mesh
+  
+  Arguments:
+    theta (nx2 array): angles along center line
+    orientation (float): absolute orientation of the center line
+    xy (2 array): absolute position of the center line
+    length (float): length of center line
+    npoints (int or all): number of final sample points along center line
+    nsamples (int or all): number of smaple points to construct center line
+    resample (bool): for resampling if True
+
+  Returns
+    npointsx2 array: the sample points along the center line
+  
+  Note:
+    The theta sample length is 2 less than the curve sample length.
+    The absolute angle is integral of theta so that for discrete integration 
+    we multiply this curve with the discretized smaple length of 1/
+  """
+
+  nt = theta.shape[0];
+  
+  if npoints is all:
+    npoints = nt + 2;
+  if nsamples is all:
+    nsamples = nt + 2;
+  n2 = (nsamples-1)//2;
+  n2a= (nsamples-2)//2;
+  
+  # resample theta 
+  if nsamples != nt + 2 or resample:
+    itheta = resample_curve(theta, nsamples - 2);
+  else:
+    itheta = theta;
+  
+  #cos/sin
+  delta = 1.0 / (nsamples-1); # Delta s for discrete integration nsample points -> nsample-1 segments
+  itheta = np.cumsum(np.hstack([0, itheta])) * delta;
+  itheta += orientation - (itheta[n2]+itheta[n2a])/2.0;
+  
+  if npoints != nsamples:
+    itheta = resample_curve(itheta, npoints - 1);
+  
+  dtheta = np.diff(itheta);
+  itheta += np.pi/2;
+  itheta = np.hstack([itheta, itheta[-1]]);
+  itheta[1:-1] -= dtheta / 2;
+  
+  return np.vstack([np.cos(itheta), np.sin(itheta)]).T;
+
+
+normals_from_theta = normals_from_theta_discrete;
+
+
+
 
 
 def shape_from_theta_discrete(theta, width, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False, smooth = 0, with_normals = False):
@@ -958,14 +1021,206 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
 
 
 
-
-
-
-
-
-
-
+def contour_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
+                       verbose = False, save = None):
+  """Detect the boundary contour(s) of the worm 
   
+  Arguments:
+    image (array): the image to detect worm from
+    sigma (float or None): width of Gaussian smoothing on image, if None use raw image
+    absolute_threshold (float or None): if set use this as the threshold, if None the threshold is set via Otsu
+    threshold_level (float): in case the threshold is determined by Otsu multiply by this factor
+    verbose (bool): plot results
+    save (str or None): save result plot to this file
+  
+  Returns:
+    tuple of arrays (npointsx2): outer and potentially inner contour line
+  """
+  
+  ### smooth image
+  if sigma is not None:
+    imgs = filters.gaussian_filter(np.asarray(image, float), sigma);
+  else:
+    imgs = image;
+   
+  ### get contours
+  if absolute_threshold is not None:
+    level = absolute_threshold;
+  else:
+    level = threshold_factor * threshold_otsu(imgs);
+  
+  cts = detect_contour(imgs, level);
+  
+  if len(cts) == 0:
+    if verbose:
+      print "Could not detect worm: No countours found!";
+    #outer, inner = None, None;
+    cts = ();
+  elif len(cts) == 1:
+    #outer, inner = cts[0], None;    
+    cts = cts;
+  elif len(cts) == 2:
+    if cts[0].shape[0] < cts[1].shape[0]:
+      i,o = 0,1;
+    else:
+      i,o = 1,0;
+    if inside_polygon(cts[i], cts[o][0,:]):
+      i,o = o,i;
+    #outer, inner = cts[o], cts[i];
+    cts = (cts[o], cts[i]);
+  else:
+    if verbose:
+      print "Found %d countours!" % len(cts);
+    #sort by length as a guess for outer contour
+    l = [len(c) for c in cts];
+    cts = tuple([cts[i] for i in np.argsort(l)]);
+  
+  ### plotting
+  if verbose:    
+    plt.figure(11); plt.clf();
+    plt.subplot(2,3,1)
+    plt.imshow(image, interpolation ='nearest')
+    plt.title('raw image');
+    plt.subplot(2,3,2)
+    plt.imshow(imgs)
+    plt.title('smoothed image');
+    plt.subplot(2,3,3)
+    plt.imshow(imgs, cmap = 'gray') 
+    for c in cts:
+      plt.plot(c[:,0], c[:,1])
+    plt.title('contour dectection')
+        
+    if isinstance(save, basestring):
+      fig = plt.figure(11);
+      fig.savefig(save);
+  
+  return cts
+
+
+def head_tail_from_contours(contours, ncontour = 100, delta = 0.3, smooth = 1.0,
+                            verbose = False, save = None, image = None):
+  """Detect non self intersecting shapes of the the worm
+  
+  Arguments:
+    ncontour (int): number of vertices in the contour
+    delta (float): min height of peak in curvature to detect the head
+    smooth (float): smoothing to use for the countour before peak detection
+    verbose (bool): plot results
+    save (str or None): save result plot to this file
+    image (array): optional image for plotting
+  
+  Returns:
+    nx2 arrays: potential poistions for the head and tail
+  """
+  
+  if len(contours)==0:
+    return np.zeros((0,2));
+  
+  # onlt detect heads on outer contour as ts very unlikely tofind it in inner one  
+  cinterp, u = splprep(contours[0].T, u = None, s = smooth, per = 1) 
+  us = np.linspace(u.min(), u.max(), ncontour)
+  x, y = splev(us[:-1], cinterp, der = 0)
+
+  ### curvature along the points
+  dx, dy = splev(us[:-1], cinterp, der = 1)
+  d2x, d2y = splev(us[:-1], cinterp, der = 2)
+  k = (dx * d2y - dy * d2x)/np.power(dx**2 + dy**2, 1.5);
+  
+  ### find tail / head via peak detection
+  #pad k to detect peaks on both sides
+  nextra = 20;
+  kk = -k; # negative curvature peaks are heads/tails
+  kk = np.hstack([kk,kk[:nextra]]);
+  kpeaks = find_peaks(kk, delta = delta);
+  #print peaks.shape
+  if kpeaks.shape[0] > 0:  
+    kpeaks = kpeaks[kpeaks[:,0] < k.shape[0],:];
+    peaks = np.vstack([x[np.asarray(kpeaks[:,0], dtype = int)], y[np.asarray(kpeaks[:,0], dtype = int)]]).T;
+  else:
+    peaks = np.zeros((0,2));
+    
+  ### plotting
+  if verbose:
+    plt.figure(11); plt.clf();
+    if image is not None:
+      plt.subplot(1,2,1)
+      plt.imshow(image, cmap = 'gray') 
+      for c in contours:
+        plt.plot(c[:,0], c[:,1])
+      plt.plot(x,y);
+      if len(peaks)> 0:
+        plt.scatter(peaks[:,0], peaks[:,1], c = 'm', s = 20);
+      plt.title('contour dectection')
+      plt.subplot(1,2,2);
+    
+    plt.plot(k)
+    #plt.scatter(imax, k[imax], c = 'r', s= 100);
+    if kpeaks.shape[0] > 0:
+      plt.scatter(kpeaks[:,0], -kpeaks[:,1], c = 'm', s= 40);
+    plt.title('curvature')
+    
+    if isinstance(save, basestring):
+      fig = plt.figure(11);
+      fig.savefig(save);
+  
+  return peaks;
+
+
+def normals_from_contours(contours):
+  """Returns normal vectors along the contours
+  
+  Arguments:
+    contours (tuple): tuple of contours
+  
+  Returns:
+    tuple: tuple of normals corresponding to the contours
+    
+  Note:
+    Assumes first contour to be outer contour and optional second contour to be inner contour
+    Also assumes closed contour with contours[i][0]==contours[i][-1] for all i.
+  """
+  
+  #ithetas = [];
+  nrmls = [];
+  for cts in contours:
+    #vectors along contour line
+    centervec = np.diff(cts, axis = 0);
+    
+    # absolute orientation
+    t0 = np.array([1,0], dtype = float); #vertical reference
+    t1 = centervec[0];
+    orientation = np.mod(np.arctan2(t0[0], t0[1]) - np.arctan2(t1[0], t1[1]) + np.pi, 2 * np.pi) - np.pi;
+      
+    # discrete thetas (no rescaling)
+    theta = np.arctan2(centervec[:-1,0], centervec[:-1,1]) - np.arctan2(centervec[1:,0], centervec[1:,1]);
+    theta = np.mod(theta + np.pi, 2 * np.pi) - np.pi;
+    theta = np.hstack([0, theta]);
+    
+    # integrate and rotate by pi/2 / half angle at point
+    itheta = np.cumsum(theta);
+    itheta += np.pi/2 + orientation;
+    itheta -= theta / 2;
+    itheta[0] -= theta[-1] / 2;
+    
+    #ithetas.append(itheta);
+    nrmls.append(np.vstack([np.cos(itheta), np.sin(itheta)]).T);
+  
+  #nrmls = [];
+  #if len(ithetas) > 0:
+  #  nrmls.append(np.vstack([np.cos(ithetas[0]), np.sin(ithetas[0])]).T);
+  #if len(ithetas) > 1:
+  #  nrmls.append(np.vstack([np.cos(ithetas[1] + np.pi), np.sin(ithetas[1] + np.pi)]).T);
+  
+  return tuple(nrmls);
+
+
+
+
+def self_occlusions_from_center(center, width, normals = None):
+  """Returns points on the center line that are occulded by the worm itself"""
+  pass
+
+
 ##############################################################################
 ### Tests
 
@@ -975,6 +1230,7 @@ def test():
   import worm.geometry as wgeo
   reload(wgeo)
   
+  ## Center form sides
   t = np.linspace(0,10,50);
   aline = np.vstack([t, np.sin(t)+0.5]).T;
   aline[0] = [0,0];
@@ -989,15 +1245,46 @@ def test():
   plt.plot(bline[:,0], bline[:,1]);
   plt.plot(cline[:,0], cline[:,1]);
   
+  # image analysis  
   reload(wgeo)
   import analysis.experiment as exp;
   img = exp.load_img(t = 100000);
   wgeo.shape_from_image(img, npoints = 15, verbose = True)
   
   
+  # contour detection
+  reload(wgeo)
+  import analysis.experiment as exp;
+  i = 25620;
+  i += 1;
+  img = exp.load_img(t = 500000+i);
+  #plt.figure(1); plt.clf();
+  #plt.imshow(img);
+  cts = wgeo.contour_from_image(img, verbose = True);
   
-  ## 
-  wgeo.theta_from_center_spline()
+  reload(wgeo)
+  cts = wgeo.contour_from_image(img, verbose = False);
+  wgeo.head_tail_from_contours(cts, delta = 0.3, smooth = 1.0, verbose = True, image = img);
+  
+  reload(wgeo)
+  from interpolation.resampling import resample as resample_curve
+  cts = wgeo.contour_from_image(img, verbose = False);
+  cts = tuple([resample_curve(c, npoints = 50) for c in cts]);
+  nrmls = wgeo.normals_from_contours(cts);
+  plt.figure(50); plt.clf();
+  plt.imshow(img);
+  for c,n in zip(cts,nrmls):
+    plt.plot(c[:,0], c[:,1]);
+    plt.scatter(c[:,0], c[:,1])
+    for ci,ni in zip(c,n):
+      cp = np.vstack([ci, ci+5*ni]);
+      plt.plot(cp[:,0], cp[:,1], 'k');
+  plt.axis('equal')
+    
+    
+    
+  
+  
   
 if __name__ == "__main__":
   test_theta();
