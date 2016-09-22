@@ -251,6 +251,119 @@ def center_from_sides_mean(left, right, npoints = all, nsamples = all, resample 
     return center;
 
 
+def center_from_sides_erosion(left, right, erode = 0.1, maxiter = 100, delta = 0.3, ncontour = 100, smooth = 1.0, npoints = all, nsamples = all, resample = False, with_width = False, verbose = False):
+  """Finds middle line between the two side curves by simply taking the mean
+  
+  Arguments:
+    left, right (nx2 array): vertices of the left and right curves
+    npoints (int or all): number of points of the mid line
+    nsamples (int or all): number of sample points to contruct midline
+    with_width (bool): if True also return estimated width
+  
+  Returns:
+    nx2 array of center line vertices
+  """
+
+  # resample to same size
+  nl = left.shape[0];
+  nr = right.shape[0];
+  if nsamples is all:
+    nsamples = max(nl,nr);
+  if npoints is all:
+    npoints = max(nl,nr);
+  
+  if nl != nsamples or nr != nsamples or resample:
+    leftcurve  = resample_curve(left, nsamples);
+    rightcurve = resample_curve(right, nsamples);
+  else:
+    leftcurve = left;
+    rightcurve = right;
+
+  #construct polygon and erode
+  poly = geom.polygon.Polygon(np.vstack([leftcurve, rightcurve[::-1,:]]));
+  
+  last = poly;
+  w = 0;
+  for i in range(maxiter):
+    new = last.buffer(-erode);
+    if not isinstance(new.boundary, geom.linestring.LineString):
+      new = last;
+      break;
+    last = new;
+    w += erode;
+    #x,y = new.boundary.xy
+    #plt.plot(x, y, color='r', alpha=0.7, linewidth=3, solid_capstyle='round', zorder=2)
+  
+  x,y = last.boundary.xy;
+  pts = np.vstack([x[:-1],y[:-1]]).T;
+  
+  if ncontour is all:
+    ncontour = pts.shape[0];
+
+  #plt.plot(pts[:,0], pts[:,1], 'm')
+  #print pts
+  
+  #detect high curvatuerpoints along the contour 
+  cinterp, u = splprep(pts.T, u = None, s = smooth, per = 1) 
+  us = np.linspace(u.min(), u.max(), ncontour)
+  x, y = splev(us[:-1], cinterp, der = 0)
+
+  ### curvature along the points
+  dx, dy = splev(us[:-1], cinterp, der = 1)
+  d2x, d2y = splev(us[:-1], cinterp, der = 2)
+  k = (dx * d2y - dy * d2x)/np.power(dx**2 + dy**2, 1.5);
+  
+  ### find tail / head via peak detection
+  #pad k to detect peaks on both sides
+  nextra = 20;
+  kk = -k; # negative curvature peaks are heads/tails
+  kk = np.hstack([kk,kk[:nextra]]);
+  peaks = find_peaks(kk, delta = delta);
+
+  if peaks.shape[0] > 0:  
+    peaks = peaks[peaks[:,0] < k.shape[0],:];
+  else:
+    peaks = np.zeros((0,2));
+  
+  #print peaks
+  if peaks.shape[0] < 2:
+    if peaks.shape[0] == 1:
+      # best guess is half way along the contour
+      if verbose:
+        print "Could only detect single curvature peak in contour, proceeding with opposite point as tail!"
+      imax = np.sort(np.asarray(np.mod(peaks[0,0] + np.array([0,ncontour//2]), ncontour), dtype = int));
+    else:
+      if verbose:
+        print "Could not detect any peaks in contour, proceeding with 0% and 50% of contour as head and tail!"
+      imax = np.asarray(np.round([0, ncontour//2]), dtype = int);
+  else:
+    imax = np.sort(np.asarray(peaks[np.argsort(peaks[:,1])[-2:],0], dtype = int))
+  #print imax  
+  
+  ### calcualte sides and midline
+  u1 = np.linspace(us[imax[0]], us[imax[1]], npoints-2)
+  x1, y1 =  splev(u1, cinterp, der = 0);
+  left = np.vstack([x1,y1]).T;
+  
+  u2 = np.linspace(us[imax[0]], us[imax[1]]-1, npoints-2);
+  u2 = np.mod(u2,1);
+  x2, y2 = splev(u2, cinterp, der = 0);
+  right = np.vstack([x2,y2]).T;
+  
+  center = (left + right) / 2;
+  center = np.vstack([leftcurve[0], center, leftcurve[-1]]);
+  
+  #plt.plot(center[:,0], center[:,1], 'k')
+  
+  if with_width:
+    width = np.vstack([0, np.linalg.norm(left - right, axis = 0) + w, 0]);
+    cw = np.hstack([center, width[:,np.newaxis]]);
+    cw = resample_curve(cw, npoints);
+    center = cw[:,:2]; width = cw[:,-1];
+    return center, width
+  else:
+    return resample_curve(center, npoints);
+
 
 def center_from_sides(left, right, npoints = all, nsamples = all, resample = False, with_width = False, smooth = 0,  nneighbours = all, method = 'projection'):
   """Finds middle line between the two side curves
@@ -1097,7 +1210,7 @@ def contour_from_image(image, sigma = 1, absolute_threshold = None, threshold_fa
   return cts
 
 
-def head_tail_from_contours(contours, ncontour = 100, delta = 0.3, smooth = 1.0,
+def head_tail_from_contours(contours, ncontour = all, delta = 0.3, smooth = 1.0, with_index = False,
                             verbose = False, save = None, image = None):
   """Detect non self intersecting shapes of the the worm
   
@@ -1105,18 +1218,25 @@ def head_tail_from_contours(contours, ncontour = 100, delta = 0.3, smooth = 1.0,
     ncontour (int): number of vertices in the contour
     delta (float): min height of peak in curvature to detect the head
     smooth (float): smoothing to use for the countour before peak detection
+    with_index (bool): return with indices of high curvature points
     verbose (bool): plot results
     save (str or None): save result plot to this file
     image (array): optional image for plotting
   
   Returns:
-    nx2 arrays: potential poistions for the head and tail
+    nx2 arrays: potential positions for the head and tail
   """
   
   if len(contours)==0:
-    return np.zeros((0,2));
+    if with_index:
+      return np.zeros((0,2)), np.zeros(0, dtype = int);
+    else:
+      return np.zeros((0,2));
   
-  # onlt detect heads on outer contour as ts very unlikely tofind it in inner one  
+  # onlt detect heads on outer contour as ts very unlikely tofind it in inner one
+  if ncontour is not all:
+    ncontour = contours[0].shape[0];
+  
   cinterp, u = splprep(contours[0].T, u = None, s = smooth, per = 1) 
   us = np.linspace(u.min(), u.max(), ncontour)
   x, y = splev(us[:-1], cinterp, der = 0)
@@ -1135,9 +1255,11 @@ def head_tail_from_contours(contours, ncontour = 100, delta = 0.3, smooth = 1.0,
   #print peaks.shape
   if kpeaks.shape[0] > 0:  
     kpeaks = kpeaks[kpeaks[:,0] < k.shape[0],:];
-    peaks = np.vstack([x[np.asarray(kpeaks[:,0], dtype = int)], y[np.asarray(kpeaks[:,0], dtype = int)]]).T;
+    idx = np.asarray(kpeaks[:,0], dtype = int);
+    peaks = np.vstack([x[idx], y[idx]]).T;
   else:
     peaks = np.zeros((0,2));
+    idx = np.zeros(0,dtype = int);
     
   ### plotting
   if verbose:
@@ -1163,7 +1285,10 @@ def head_tail_from_contours(contours, ncontour = 100, delta = 0.3, smooth = 1.0,
       fig = plt.figure(11);
       fig.savefig(save);
   
-  return peaks;
+  if with_index:
+    return peaks, idx
+  else:
+    return peaks;
 
 
 def normals_from_contours(contours):
@@ -1228,6 +1353,7 @@ def test():
   import numpy as np
   import matplotlib.pyplot as plt
   import worm.geometry as wgeo
+  from interpolation.resampling import resample as resample_curve
   reload(wgeo)
   
   ## Center form sides
@@ -1237,6 +1363,8 @@ def test():
   bline = np.vstack([t, np.sin(t)]).T;
   aline[0] = bline[0];  
   aline[-1] = bline[-1];
+  aline = resample_curve(aline, npoints = 50);
+  bline = resample_curve(bline, npoints = 50);
   
   cline = wgeo.center_from_sides(aline, bline, nsamples = 50, npoints = 50, smooth = 0.1, resample = True, method = 'projection');
   
@@ -1244,6 +1372,15 @@ def test():
   plt.plot(aline[:,0], aline[:,1]);
   plt.plot(bline[:,0], bline[:,1]);
   plt.plot(cline[:,0], cline[:,1]);
+
+  reload(wgeo)
+  cline = wgeo.center_from_sides_erosion(aline, bline, erode = 0.05, nsamples = 50, npoints = 50, smooth = 0.1, resample = True);
+  
+  plt.figure(2); plt.clf();
+  plt.plot(aline[:,0], aline[:,1]);
+  plt.plot(bline[:,0], bline[:,1]);
+  plt.plot(cline[:,0], cline[:,1]);
+
   
   # image analysis  
   reload(wgeo)
@@ -1267,7 +1404,6 @@ def test():
   wgeo.head_tail_from_contours(cts, delta = 0.3, smooth = 1.0, verbose = True, image = img);
   
   reload(wgeo)
-  from interpolation.resampling import resample as resample_curve
   cts = wgeo.contour_from_image(img, verbose = False);
   cts = tuple([resample_curve(c, npoints = 50) for c in cts]);
   nrmls = wgeo.normals_from_contours(cts);
