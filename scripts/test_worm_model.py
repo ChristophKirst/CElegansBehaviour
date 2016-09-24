@@ -203,7 +203,46 @@ plt.subplot(1,2,2)
 plt.imshow(phi);
 ws.plot()
 
+left, right = ws.shape()
 
+
+import shapely.geometry as geo
+from descartes import PolygonPatch
+
+p = geo.Polygon(np.vstack([left, right[::-1,:]]))
+
+
+fig = plt.figure()
+ax = fig.add_subplot(111)
+minx, miny, maxx, maxy = mp.bounds
+w, h = maxx - minx, maxy - miny
+ax.set_xlim(minx - 0.2 * w, maxx + 0.2 * w)
+ax.set_ylim(miny - 0.2 * h, maxy + 0.2 * h)
+ax.set_aspect(1)
+
+patch = PolygonPatch(p, fc='b', ec='#555555', lw=0.2, alpha=1., zorder=1)
+ax.add_patch(patch)
+
+pb = p.buffer(0)
+pb.is_valid
+
+bd = pb.boundary;
+if isinstance(bd, geo.multilinestring.MultiLineString):
+  cts = [];
+  for b in bd:
+    x,y = b.xy;
+    cts.append(np.vstack([x,y]).T);
+else: # not self intersections
+  x,y = bd.xy;
+  cts = np.vstack([x,y]).T;
+
+tuple(cts)
+
+plt.figure(13); plt.clf();
+for c in cts:
+  plt.plot(c[:,0], c[:,1]);
+
+  
 
 
 import matplotlib.animation as animation

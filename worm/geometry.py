@@ -428,7 +428,7 @@ def theta_from_center_discrete(center, npoints = all, nsamples = all, resample =
     center (nx2 array): center line
     npoints (int or all): number of final sample points for the center line
     nsamples (int) or all): number of sample points to construct theta
-    resmaple (bool): forces uniform resampling if True
+    resample (bool): forces uniform resampling if True
     smooth (float): smoothing factor for final sampling
   
   Returns:
@@ -494,7 +494,7 @@ def theta_from_center_spline(center, npoints = all, nsamples = all, resample = F
     center (nx2 array): center line
     npoints (int or all): number of final sample points for the center line
     nsamples (int) or all): number of sample points to construct theta
-    resmaple (bool): forces uniform resampling if True
+    resample (bool): forces uniform resampling if True
     smooth (float): smoothing factor for final sampling
   
   Returns:
@@ -684,7 +684,7 @@ theta_from_center = theta_from_center_discrete;
 
 
 
-def normals_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False):
+def normals_from_theta_discrete(theta, orientation = 0, npoints = all, nsamples = all, resample = False):
   """Constructs normals from theta on discrete mesh
   
   Arguments:
@@ -739,11 +739,22 @@ def normals_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, 
 normals_from_theta = normals_from_theta_discrete;
 
 
-
-
+def normals_from_center_discrete(center):
+  """Construct normals along center line
+  
+  Arguments:
+    center (nx2 array): center line
+  
+  Returns:
+    array (nx2): normals along center points
+  """
+  
+  theta, orientation, xy, length = theta_from_center_discrete(center);
+  return normals_from_theta_discrete(theta, orientation);
+  
 
 def shape_from_theta_discrete(theta, width, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False, smooth = 0, with_normals = False):
-  """Constructs center line from theta on discrete mesh
+  """Construct center line from theta on discrete mesh
   
   Arguments:
     theta (nx2 array): angles along center line
@@ -830,6 +841,33 @@ def shape_from_theta_spline(theta, width, orientation = 0, xy = [0,0], length = 
 shape_from_theta = shape_from_theta_discrete;
 #shape_from_theta = shape_from_theta_spline;
 
+
+
+def shape_from_center_discrete(center, width, normals = None):
+  """Get side lines from center and width
+  
+  Arguments:
+    center (nx2 array): center line
+    width (n array): width profile
+    normals (nx2 or None): normals, if None calculate
+  
+  Returns:
+    tuple of arrays (nx2): left, right lines
+  """
+  
+  if width.shape[0] != center.shape[0]:
+    w = resample_curve(width, npoints = center.shape[0]);
+  else:
+    w = width;
+  w = np.vstack([w,w]).T;
+  
+  if normals is None:
+    normals = normals_from_center_discrete(center);
+  
+  left  = center + 0.5 * w * normals;
+  right = center - 0.5 * w * normals;
+
+  return left, right
 
 
 def test_theta():
@@ -1210,7 +1248,7 @@ def contour_from_image(image, sigma = 1, absolute_threshold = None, threshold_fa
   return cts
 
 
-def head_tail_from_contours(contours, ncontour = all, delta = 0.3, smooth = 1.0, with_index = False,
+def head_tail_from_contour(contours, ncontour = all, delta = 0.3, smooth = 1.0, with_index = False,
                             verbose = False, save = None, image = None):
   """Detect non self intersecting shapes of the the worm
   
@@ -1291,7 +1329,7 @@ def head_tail_from_contours(contours, ncontour = all, delta = 0.3, smooth = 1.0,
     return peaks;
 
 
-def normals_from_contours(contours):
+def normals_from_contour(contours):
   """Returns normal vectors along the contours
   
   Arguments:
@@ -1340,10 +1378,81 @@ def normals_from_contours(contours):
 
 
 
+def contour_from_shape(left, right):
+  """Convert the worm shape to a contour
+  
+  Arguments:
+    left, right (nx2 arrays): left and right side of the worm
+    
+  Returns
+    tuple: contours of the worm
+  """
+  
+  poly = geom.Polygon(np.vstack([left, right[::-1,:]]));
+  poly = poly.buffer(0)
+  bdr = poly.boundary;
+  if isinstance(bdr, geom.multilinestring.MultiLineString):
+    cts = [];
+    for b in bdr:
+      x,y = b.xy;
+      cts.append(np.vstack([x,y]).T);
+  else: # no self intersections
+    x,y = bdr.xy;
+    cts = np.vstack([x,y]).T;
+  
+  return tuple(cts)  
+  
 
-def self_occlusions_from_center(center, width, normals = None):
-  """Returns points on the center line that are occulded by the worm itself"""
-  pass
+def self_occlusions_from_center_discrete(center, width, margin = 0.01, shape = True, normals = None, left = None, right = None, as_index = True):
+  """Returns points on the center line whose boundary points that are occulded by the worm itself
+  
+  Arguments:
+    center (nx2 array): center line    
+    width (n array): width of the worm at the given center point
+    normals (nx2 array): normals along the center line
+    left,right (nx2 array): sides of the worm
+    margin (float): margin by which to reduce width in order to detect real insiders (small fraction of thw width)
+    shape (bool): if true return indices of occluded boundary else the occluded center points
+    as_index (bool): if true return the indices of the center points
+
+    
+  Returns
+    array: coordinates or indices of the boundary / centre points that are occluded
+  """
+
+  if normals is None:
+    normals = normals_from_center_discrete(center = center);
+  
+  if left is None or right is None:
+    left,right = shape_from_center_discrete(center = center, width = width, normals = normals);
+  
+  poly = geom.Polygon(np.vstack([left, right[::-1,:]]));
+  poly = poly.buffer(-margin);
+  
+  inleft = [poly.contains(geom.Point(xy)) for xy in left];
+  inright = [poly.contains(geom.Point(xy)) for xy in right]; 
+  if shape:
+    if as_index:
+      return (np.where(inleft)[0], np.where(inright)[0]);
+    else:
+      return left[inleft], right[inright];
+  else:
+    incenter = np.logical_or(inleft, inright);
+    if as_index:
+      return np.where(incenter)[0];
+    else:
+      return center[incenter];
+
+
+
+def normals_from_contour_points(contour, points):
+  """Find normals on the spline curve contour at locations of the parameterization index points
+  
+
+
+def match_shape_to_contour(left, right, normals, contour, sigmas = None, min_alignment = 0, search_radius = None, match_head_tail = True):
+  """Match points of the shape points n the contour
+
 
 
 ##############################################################################
@@ -1417,9 +1526,27 @@ def test():
       plt.plot(cp[:,0], cp[:,1], 'k');
   plt.axis('equal')
     
-    
-    
   
+  #self occlusions
+  import worm.model as wm;
+  reload(wgeo)
+  nn = 20;
+  w = wm.WormModel(theta = np.hstack([np.linspace(0.1, 0.8, nn)*13, 13* np.linspace(0.9, 0.1, nn+1)]) , length = 150);
+  left, right, center, normals, width = w.shape(with_center=True, with_normals=True, with_width=True);
+  
+  plt.figure(1); plt.clf();
+  w.plot()
+  
+  ocl,ocr = wgeo.self_occlusions_from_center_discrete(center, width, margin = 0.01, normals = normals, left = left, right = right, shape = True, as_index = True);
+  pts = left[ocl];
+  plt.scatter(pts[:,0], pts[:,1], c ='m', s = 40);
+  pts = right[ocr];
+  plt.scatter(pts[:,0], pts[:,1], c ='m', s = 40);
+  
+  occ = wgeo.self_occlusions_from_center_discrete(center, width, margin = 0.01, normals = normals, left = left, right = right, shape = False, as_index = True);
+  pts = center[occ];
+  plt.scatter(pts[:,0], pts[:,1], c ='b', s = 40);
+  plt.axis('equal')
   
   
 if __name__ == "__main__":

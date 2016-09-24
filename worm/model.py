@@ -262,7 +262,7 @@ class WormModel(object):
                                      smooth = 0, with_normals = with_normals);
  
   
-  def shape(self, npoints = all, with_center = False, with_normals = False):
+  def shape(self, npoints = all, with_center = False, with_normals = False, with_width = False):
     """Returns left and right side and center line of the worm
     
     Arguments:
@@ -289,15 +289,27 @@ class WormModel(object):
     if with_normals:
       center, left, right, normals = centerleftrightnormals;
       if with_center:
-        return left, right, center, normals;
+        if with_width:
+          return left, right, center, normals, width;
+        else:
+          return left, right, center, normals;
       else:
-        return left, right, normals;
+        if with_width:
+          return left, right, normals, width;
+        else:
+          return left, right, normals
     else:
       center, left, right = centerleftrightnormals;
       if with_center:
-        return left, right, center;
+        if with_width:
+          return left, right, center, width;
+        else:
+          return left, right, center;
       else:
-        return left, right;
+        if with_width:
+          return left, right, width;
+        else:
+          return left, right;
    
   
   def polygon(self, npoints = all):
