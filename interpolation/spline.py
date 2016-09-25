@@ -37,7 +37,7 @@ class Spline:
       tck (tuple): intialize form tck tuple returned by splrep or splprep
     
     Note:
-      the splrep interpolation function takes a knot vecor for the inner points only
+      The splrep interpolation function takes a knot vecor for the inner points only
       In addition there are degree + 1 zero coeffcients in the final spline coefficients. 
       Thus the number of parameter is given by:
       nparameter = len(knots) + 2 + 2 * degree - (degree + 1) = len(knots) + degree + 1
@@ -522,22 +522,32 @@ class Curve:
     """Resample the curve such that the distances between the points are uniformly spaced"""
     
     tck,u = splprep(self.values.T, s = 0);
+    values = splev(self.points, tck, der = 0, ext = 1);  
+    self.from_values(np.vstack(values).T);
+    return;    
     
-    self.degree = tck[2]; 
-    self.ndim = len(tck[1]);
-    self.knots_all = tck[0];
-    self.knots = tck[0][self.degree+1:-self.degree-1];
-    self.nparameter = self.knots.shape[0] + self.degree + 1;
+    #self.degree = tck[2]; 
+    #self.ndim = len(tck[1]);
+    #self.knots_all = tck[0];
+    #self.knots = tck[0][self.degree+1:-self.degree-1];
+    #self.nparameter = self.knots.shape[0] + self.degree + 1;
+    #
+    #self.parameter = np.zeros((self.nparameter, self.ndim));
+    #for i,cc in enumerate(tck[1]):    
+    #  self.parameter[:,i] = cc[:self.nparameter];
+      
+      
+    # alterantive resampling
+#    dv = np.diff(self.values, axis = 0);
+#    d = np.r_[0, np.linalg.norm(dv, axis = 1)];
+#    u = np.cumsum(d);
+#    u = u / u[-1];
     
-    self.parameter = np.zeros((self.nparameter, self.ndim));
-    for i,cc in enumerate(tck[1]):    
-      self.parameter[:,i] = cc[:self.nparameter];
-  
-    if npoints is None:
-      npoints = self.npoints;
-    else:
-      self.npoints = npoints;  
-    self.points = np.linspace(0,1, npoints);
+    #if npoints is None:
+    #  npoints = self.npoints;
+    #else:
+    #  self.npoints = npoints;  
+    #self.points = np.linspace(0,1, npoints);
     
     values = splev(self.points, tck, der = 0, ext = 1);  
     self.values = np.vstack(values).T;
@@ -560,7 +570,7 @@ class Curve:
     values = self.values;
 
     if knots is None and nparameter is None:
-      return;
+      nparameter = self.nparameter;
     
     if knots is None:
       self.knots = np.linspace(self.points[0], self.points[-1], nparameter - self.degree + 1)[1:-1];
@@ -850,7 +860,7 @@ class Curve:
       except FloatingPointError:
           raise ValueError(("The spline has internal repeated knots and is not differentiable %d times") % n);
     tck = (t, [c[d] for d in dim], k);
-    return tck;
+    #return tck;
     #for d in dim:
     #  tck = splder(self.tck_1d(d), n);
     #  c.append(tck[1][:self.nparameter - n]);
