@@ -12,7 +12,7 @@ __docformat__ = 'rest'
 
 
 class Curve:
-  """Basic interface to a parameterized curve"""
+  """Basic interface to a parameterized curve in 1d"""
   
   def __init__(self, *args, **kwargs):
     """Constructor """
@@ -35,9 +35,11 @@ class Curve:
     pass
   
   def integral(self):
-    """Returns the integral of the curve"""
+    """Returns the integral of the curve along all dimensions"""
     pass
     
   def derivative(self):
-    """Returns the derivative of the curve"""
+    """Returns the derivative of the curve along all dimensions"""
     pass
+  
+

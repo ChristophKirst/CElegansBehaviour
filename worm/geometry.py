@@ -1444,9 +1444,14 @@ def self_occlusions_from_center_discrete(center, width, margin = 0.01, shape = T
       return center[incenter];
 
 
+def phi_spline_from_contour_spline(contour):
+  """
+
 
 def normals_from_contour_points(contour, points):
   """Find normals on the spline curve contour at locations of the parameterization index points
+  
+  
   
 
 

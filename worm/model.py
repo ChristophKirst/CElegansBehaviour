@@ -55,10 +55,10 @@ import matplotlib.pyplot as plt
 import cv2
 #import scipy.ndimage as nd
 #from scipy.spatial.distance import cdist
-from scipy.interpolate import splrep, splprep, splev
+from scipy.interpolate import splprep, splev #,splrep,
 
 import worm.geometry as wormgeo
-from interpolation.curve import Curve
+#from interpolation.curve import Curve
 from interpolation.spline import Spline
 from interpolation.resampling import resample as resample_curve
 
@@ -93,7 +93,7 @@ class WormModel(object):
     
     if theta is None:
       self.theta = Spline(npoints = self.npoints - 2, nparameter = nparameter, degree = 3);
-    elif isinstance(theta, Curve):
+    elif isinstance(theta, Spline):
       self.theta = theta;
     else:
       self.theta = Spline(values = theta, npoints = self.npoints, nparameter = nparameter, degree = 3);
@@ -103,7 +103,7 @@ class WormModel(object):
     if width is None:
       width = self.default_width();
       self.width = Spline(values = width, npoints = self.npoints, nparameter = nparameter, degree = 3);
-    elif isinstance(width, Curve):
+    elif isinstance(width, Spline):
       self.width = width;
     else:
       self.width = Spline(values = width, nparameter = nparameter, degree = 3);
