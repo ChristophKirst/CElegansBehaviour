@@ -9,9 +9,33 @@ import numpy as np
 from scipy.interpolate import splprep, splev, splrep, splantider
 import matplotlib.pyplot as plt
 
-s = np.linspace(0,1,50) * 2 * np.pi;
+
+nn = 50;
+s = np.linspace(0,1,nn) * 2 * np.pi;
 xy = np.vstack([np.sin(s), np.cos(s)]).T;
 xy.shape
+
+
+c = 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 x = xy[:,0];
