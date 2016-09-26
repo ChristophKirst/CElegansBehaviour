@@ -18,6 +18,7 @@ class C(object):
 
     @x.setter
     def x(self, value):
+        print 'setting'
         self._x = value
 
     @x.deleter
