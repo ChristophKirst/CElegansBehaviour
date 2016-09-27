@@ -35,7 +35,7 @@ class Spline(object):
       degree (int): degree of the spline
       knots (array): knot vector (excluding boundary points), if None linspace(points[0],points[-1],nparameter-2*degree)[1:-1]
       tck (tuple): intialize form tck tuple returned by splrep or splprep
-      with_projection (bool): if true calculate values via projection matrix to speed up calculation
+      with_projection (bool): if True calculate values via projection matrix to speed up calculation
     
     Note:
       The spline is fully defined by the knot vector and the spline coefficients.
@@ -52,6 +52,7 @@ class Spline(object):
     self._projection = None;
     self._projection_inverse = None;
     
+    # setup
     self.with_projection = with_projection;
     
     if tck is not None:
@@ -70,7 +71,7 @@ class Spline(object):
     else:
       npointsi = npoints;
     
-      
+    #initialize input values
     if parameter is not None:
       parameter = np.array(parameter, dtype = float);
       nparameter = parameter.shape[0];
@@ -94,17 +95,11 @@ class Spline(object):
       if knots is None:
         if nparameter is None:
           nparameter = npointsi;
-        knots = np.linspace(pointsi[0], pointsi[-1], nparameter - degree + 1)[1:-1];
-      else:
-        knots = np.array(knots, dtype = float);
-    else:
-      parameter = np.array(parameter, dtype = float);
-      nparameter = parameter.shape[0];
-      
+        knots = np.linspace(pointsi[0], pointsi[-1], nparameter - self.degree + 1)[1:-1];
+    else:      
       if knots is None:
         knots = np.linspace(pointsi[0], pointsi[-1], nparameter - self.degree + 1)[1:-1];
       else:
-        knots = np.array(knots, dtype = float);
         if nparameter != knots.shape[0] + 1 + self.degree:
           raise ValueError('parameter and knots have inconsistent dimensions %d + 1 + %d != %d' % (knots.shape[0], self.degree, nparameter)); 
     
@@ -138,14 +133,6 @@ class Spline(object):
   def points(self):
     """Sample points of the Spline"""
     return self._points;
-    #if self._points is not None:
-    #  return self._points;
-    #if self._npoints is not None:
-    #  self._points = np.linspace(0,1,self._npoints);
-    #  return self._points;
-    #else:
-    #  raise RuntimeError('Spline has no internal sample points!');
-    #  #return False;
 
   @points.setter
   def points(self, points):
@@ -156,14 +143,6 @@ class Spline(object):
   def npoints(self):
     """Number of sample points of the Spline"""
     return self._npoints;
-    #if self._npoints is not None:
-    #  return self._npoints;
-    #if self._points is not None:
-    #  self._npoints = self._points.shape[0];
-    #  return self._npoints;
-    #else:
-    #  raise RuntimeError('Spline has no internal number of sample points!');
-    #  #return False;
   
   @npoints.setter
   def npoints(self, npoints):
@@ -178,11 +157,11 @@ class Spline(object):
     return self._values;
   
   @values.setter
-  def values(self, value):
-    if value is None:
-      self._value = None;
+  def values(self, values):
+    if values is None:
+      self._values = None;
     else:
-      self.set_values(value);
+      self.set_values(values);
     
   
   @property
@@ -279,7 +258,10 @@ class Spline(object):
       self._points = None;
       self._npoints = None;
     elif isinstance(points, int):
-      self._points = np.linspace(0,1,points);
+      if self._points is None:
+        self._points = np.linspace(0,1,points);
+      else:
+        self._points = np.linspace(points[0],points[-1],points);
       self._npoints = points;
     else:
       self._points = np.array(points, dtype = float);
@@ -288,7 +270,20 @@ class Spline(object):
     # values and projection matrix will need to be updated after change of the sample points
     self._values = None;
     self._projection = None;
-    self._projection_inverse = None;  
+    self._projection_inverse = None;
+  
+  
+  def set_points_uniform(self, npoints = None):
+    """Set uniformly spaced sample points
+    
+    Arguments:
+      npoints (int or None): number of sample points
+    """
+    if npoints is None:
+      if self._npoints is None:
+        raise ValueError('cannot determine number of points!');
+      npoints = self._npoints;
+    self.set_points(npoints);
   
   
   def set_knots(self, knots = None, points = None, nparameter = None, update_parameter = True):
@@ -354,14 +349,20 @@ class Spline(object):
     if nparameter is None:
       nparameter = self.nparameter;
     self.set_knots(nparameter = nparameter);
+    
   
-       
+  def uniform(self, npoints = None):
+    """Make sample points and knots uniformly spaced"""
+    self.set_points_uniform(npoints = npoints);
+    self.set_knots_uniform();
+  
+  
   def set_values(self, values, points = None):
     """Calculate the bspline parameter for the given values and sample points 
 
     Arguments:
       values (array): values of data points
-      points (array or None): sample points for the data values, if None use internal ones or linspace(0,1,values.shape[0])
+      points (array or None): sample points for the data values, if None use internal points or linspace(0,1,values.shape[0])
     """
     values = np.array(values, dtype = float);
     
@@ -375,16 +376,16 @@ class Spline(object):
     if values.shape[0] != self._points.shape[0]:
       raise ValueError('number of values %d mismatch number of points %d' % (values.shape[0], self._points.shape[0]));
     
-    #set values
-    if self.projection_inverse is not False:
+    #set parameter from values
+    if self.with_projection and self.projection_inverse is not False:
       self._parameter = self._projection_inverse.dot(values); 
+      self._values = values;  
     else:
       tck = splrep(self._points, values, t = self._knots, task = -1, k = self.degree);
       self._parameter = tck[1][:self._nparameter];
-
-    # values changed
-    self._values = None;
-    #self._values = values; #fast but imprecise as values of spline due approximation might differ!
+      # values changed
+      self._values = None;
+      #self._values = values; #fast but imprecise as values on spline due approximation might differ!
   
   
   def set_parameter(self, parameter):
@@ -393,7 +394,6 @@ class Spline(object):
     Arguments:
       parameter (array): the new parameter values
     """
-    
     parameter = np.array(parameter, dtype = float);
     if parameter.shape[0] != self._nparameter:
       raise ValueError('length of passed parameter %d mismatch number of internal parameter %d' % (parameter.shape[0], self._nparameter));
@@ -409,8 +409,8 @@ class Spline(object):
     
     Arguments:
         tck (tuple): t,c,k tuple as returned by splrep
+        points (int, array or None): optional sample points pecification
     """
-
     t,c,k = tck;
     self.degree = k;
 
@@ -422,6 +422,7 @@ class Spline(object):
     # set parameter
     self._parameter = c[:self._nparameter];
     
+    #set points
     if points is not None:
       self.set_points(points);
     
@@ -588,8 +589,9 @@ class Spline(object):
     Note:
       This returns a tck tuple as splrep
     """  
-    p = np.pad(self._parameter, (0,self.degree+1), 'constant');
-    return (self._knots_all, p, self.degree);
+    k = self.degree;
+    p = np.pad(self._parameter, (0,k+1), 'constant');
+    return (self._knots_all, p, k);
   
   
   def tck_ndim(self):
@@ -685,6 +687,28 @@ class Spline(object):
     values = self.get_values(points + shift, extrapolation = extrapolation);
     self.set_values(values, points);
   
+  
+  def add(self, value):
+    """Adds a constant value to spline
+    
+    Arguments:
+      value: add this value to the spline
+    """
+    self._parameter += value;
+    if self._values is not None:
+      self._values += value;
+  
+      
+  def multiply(self, factor):
+    """Multiply spline by a factor
+            
+    Arguments:
+      factor: scale pline by this factor
+    """
+    self._parameter *= factor;
+    if self._values is not None:
+      self._values *= factor;
+  
   ############################################################################
   ### Visualization
     
@@ -695,10 +719,13 @@ class Spline(object):
 
 
 
-class Curve(object):
+
+
+
+class Curve(Spline):
   """Class for handling multi-dimensional spline interpolation and conversion between bspline coefficients and splines"""
   
-  def __init__(self, values = None, points = None, parameter = None, npoints = None, nparameter = None, degree = 3, ndim = None, knots = None, tck = None, with_projection = True):
+  def __init__(self, values = None, points = None, parameter = None, npoints = None, nparameter = None, ndim = None, degree = 3, knots = None, tck = None, with_projection = True):
     """Constructor for Curve
     
     Arguments:
@@ -707,24 +734,36 @@ class Curve(object):
       parameter (array): parameter of the spline coefficients for each dimension, if None determine from values
       npoints (int): number of sample points alsong the curve, if None len(values) or len(points) or nparameter
       nparameter (int):  number of spline coefficients in each dimension, if None determined from len(parameter), len(values) or len(points)
+      ndim (int): dimension of the values
       degree (int): degree of the spline
       knots (array): knot vector (excluding boundary points), if None linspace(points[0],points[-1],nparameter-2*degree)[1:-1]
       tck (tuple): intialize form tck tuple returned by splprep
-      with_projection (bool): if True calculate values via projection matrix
+      with_projection (bool): if True calculate values via projection matrix to speed up calculation
     
     Note:
-      The splrep interpolation function takes a knot vecor for the inner points only
-      In addition there are degree + 1 zero coeffcients in the final spline coefficients. 
-      Thus the number of parameter is given by:
-      nparameter = len(knots) + 2 + 2 * degree - (degree + 1) = len(knots) + degree + 1
-      npoints = len(points) = len(knots) + 2
+      The spline is fully defined by the knot vector and the spline coefficients for each dimension.
+      In addition the sample points and projection matrices if requested are cached for speed/convenience
       
-      For speed the basis matrices that project from and in case it is invertible to the parameter are precalculated
-      and used instead of the standard interpolating routines
+      The number of free parameter given the knot vector (excluding the boundary points) is given by:
+      nparameter = len(knots) + 2 + 2 * degree - (degree + 1) = len(knots) + degree + 1
+      for each dimension, the total number of parameter is ndim * nparameter
     """
     
+    # caches
+    self._npoints = None;
+    self._points = None;
+    self._values = None;
+    self._projection = None;
+    self._projection_inverse = None;
+    
+    # setup
+    self.with_projection = with_projection;    
+    
     if tck is not None:
-      self.from_tck(tck, points = points, npoints = npoints);
+      if points is not None:
+        self.from_tck(tck, points = points);
+      else:
+        self.from_tck(tck, points = npoints);
       return;
     
     self.degree = int(degree);
@@ -733,231 +772,136 @@ class Curve(object):
       ndim = 1;
     self.ndim = int(ndim);    
     
-    # initialize sample points
+    #initialize input values
     if values is not None:
       values = np.array(values, dtype = float);
       if values.ndim == 1:
         values = values[:, np.newaxis];
-      npoints = values.shape[0];
+      npointsi = values.shape[0];
       self.ndim = values.shape[1];
+      
+    if parameter is not None:
+      parameter = np.array(parameter, dtype = float);
+      if parameter.ndim == 1:
+        parameter = parameter[:, np.newaxis];
+      nparameter = parameter.shape[0];
+      self.ndim = values.shape[1];
+
+    if knots is not None:
+      knots = np.array(knots, dtype = float);
+      nparameter = knots.shape[0] + self.degree + 1;      
     
     if points is None:   
-      if npoints is None:
+      if npointsi is None:
         if nparameter is None:
-          raise RuntimeError('cannot determine the number of smaple points, values, points, number of points or number of parameter needs to be defined!');
-        npoints = nparameter;
-      self.points = np.linspace(0,1,npoints);
+          raise RuntimeError('cannot determine the number of sample points, values, points, number of points or number of parameter needs to be defined!');
+        npointsi = nparameter;
+      pointsi = np.linspace(0,1,npoints);
     else:
-      self.points = np.array(points, dtype = float);
-    self.npoints = self.points.shape[0];
+      pointsi = np.array(points, dtype = float);
+    npointsi = pointsi.shape[0];
     
     #initialize number of parameter and knots
     if parameter is None:
       if knots is None:
         if nparameter is None:
           #raise RuntimeError('parameter, knot vector or number of parameter needs to be defined!');
-          nparameter = self.npoints;
-        self.knots = np.linspace(self.points[0], self.points[-1], nparameter - degree + 1)[1:-1];
-        self.nparameter = int(nparameter);
-      else:
-        self.knots = np.array(knots, dtype = float);
-        self.nparameter = int(knots.shape[0] + 1 + degree);
-      self.parameter = None;
-    else:
-      self.parameter = np.array(parameter, dtype = float);
-      if self.parameter.ndim == 1:
-        self.parameter = self.parameter[:,np.newaxis];
-      self.ndim = self.parameter.shape[1];
-      self.nparameter = self.parameter.shape[0];
-      
+          nparameter = npointsi;
+        knots = np.linspace(pointsi[0], pointsi[-1], nparameter - self.degree + 1)[1:-1];
+    else:      
       if knots is None:
-        self.knots = np.linspace(self.points[0], self.points[-1], self.nparameter - self.degree + 1)[1:-1];
+        knots = np.linspace(pointsi[0], pointsi[-1], nparameter - self.degree + 1)[1:-1];
       else:
-        self.knots = np.array(knots, dtype = float);
-        if self.knots.shape[0] != int(knots.shape[0] + 1 + degree):
-          raise RuntimeError('parameter and knots have inconsistent dimensions %d + 1 + %d != %d' % (self.knots.shape[0], self.degree, self.nparameter)); 
+        if nparameter != knots.shape[0] + 1 + self.degree:
+          raise ValueError('parameter and knots have inconsistent dimensions %d + 1 + %d != %d' % (knots.shape[0], self.degree, nparameter)); 
     
-    # get all knots
-    self.initialize_all_knots();
+    #update the knots
+    self.set_knots(knots, pointsi[[0,-1]], update_parameter = False);
     
     # calcualte basis matrix
     self.initialize_basis();       
     
-    if self.parameter is None:
+    # initialize parameter and cache values
+    if parameter is None:
       if values is None:
-        self.from_parameter(np.zeros((self.nparameter, self.ndim)));
+        self.set_parameter(np.zeros((nparameter, self.ndim)));
+        if npoints is not None or points is not None:
+          self.set_points(pointsi);
       else:
-        self.from_values(values);
+        self.set_values(values, points = pointsi);
     else:
       if values is not None:
-        raise RuntimeError('initilializing with parameter and values, only specify one of both!');
-      self.values = np.zeros((self.npoints, self.ndim));
-      for d in range(self.ndim):
-        self.values[:,d] = self.basis.dot(self.parameter[:,d]);
+        raise RuntimeWarning('both parameter and values are specified, using parameter to define spline!');
+      self.set_parameter(parameter);
+      if npoints is not None or points is not None:
+        self.set_points(pointsi);
     
   
-  def initialize_all_knots(self):
-    """Initializes all knots"""
-    #y = np.zeros(self.npoints);
-    #tck = splrep(self.points, y, t = self.knots, task = -1, k = self.degree);
-    #self.knots_all = tck[0];
-    k = self.degree;
-    self.knots_all = np.zeros(self.knots.shape[0] + 2 * k + 2);
-    self.knots_all[k+1:-k-1] = self.knots;
-    self.knots_all[:k+1] = self.points[0];
-    self.knots_all[-k-1:]= self.points[-1];
+  ############################################################################
+  ### Spline Setter
   
-  
-  def basis_matrix(self, derivative = 0):
-    """Basis matrix to calucalte spline coefficients via matrix product""" 
-    
-    basis = np.zeros((self.nparameter, self.npoints));
-    for i in range(self.nparameter):
-      p = np.zeros(self.nparameter);
-      p[i] = 1;
-      pp = np.pad(p, (0,self.degree+1), 'constant');
-      tck = (self.knots_all, pp, self.degree);
-      basis[i] = splev(self.points, tck, der = derivative, ext = 1);
-    
-    return basis.T;
-    
-  
-  def initialize_basis(self):
-    """Initializes the basis matrices"""
-    self.basis = self.basis_matrix();
-    if self.npoints == self.nparameter:
-      try:
-        self.basis_inv = np.linalg.inv(self.basis);
-      except:
-        self.basis_inv = None;
-    else:
-      self.basis_inv = None;
       
-  
-  def copy(self):
-    """Deep copy the Curve"""
-    return copy.deepcopy(self);
-  
-  
-  def resample(self, points = None, npoints = None):
-    """Resample the curve along new points or number of points
+  def set_points_uniform_length(self, npoints = None):
+    """Resample the curves base points such that the distances between the curve vectors are uniform
     
     Arguments:
-      points (array): sample points
-      npoints (int): number of sample points
+      npoints (int or None): number of sample points    
     """
-    tck = self.tck();
-    self.from_tck(tck, points = points, npoints = npoints);
-  
-    
-  def resample_uniform(self, npoints = None):
-    """Resample the curve such that the distances between the points are uniformly spaced"""
+    if npoints is None:
+      if self._npoints is None:
+        raise ValueError('cannot determine number of points for uniform sampling!');
+      npoints = self._npoints; 
     
     tck,u = splprep(self.values.T, s = 0);
-    values = splev(self.points, tck, der = 0, ext = 1);  
-    self.from_values(np.vstack(values).T);
-    return;    
-    
-    #self.degree = tck[2]; 
-    #self.ndim = len(tck[1]);
-    #self.knots_all = tck[0];
-    #self.knots = tck[0][self.degree+1:-self.degree-1];
-    #self.nparameter = self.knots.shape[0] + self.degree + 1;
-    #
-    #self.parameter = np.zeros((self.nparameter, self.ndim));
-    #for i,cc in enumerate(tck[1]):    
-    #  self.parameter[:,i] = cc[:self.nparameter];
-      
-      
-    # alterantive resampling
-#    dv = np.diff(self.values, axis = 0);
-#    d = np.r_[0, np.linalg.norm(dv, axis = 1)];
-#    u = np.cumsum(d);
-#    u = u / u[-1];
-    
-    #if npoints is None:
-    #  npoints = self.npoints;
-    #else:
-    #  self.npoints = npoints;  
-    #self.points = np.linspace(0,1, npoints);
-    
-    values = splev(self.points, tck, der = 0, ext = 1);  
-    self.values = np.vstack(values).T;
-    
-    self.initialize_basis();
+    points = np.linspace(0,1,npoints)
+    values = splev(points, tck, der = 0, ext = 1);  
+    self.set_values(np.vstack(values).T, points);    
   
   
-  def reknot(self, knots = None, nparameter = None):
-    """Change to the specified knot vector specifications
-    
-    Arguments:
-      knots (array or None): the inner knot vectors, if None use linspace(0,1,nparameter-degree-1 + 2)[1:-1]
-      nparameter (int or None): number of parameter of the curve in each dimension
-    
-    Note:
-      In order to compare parameters of curves the knot vectors have to be the same.
-      nparameter = len(knots) + degree + 1
-    """
-    
-    values = self.values;
-
-    if knots is None and nparameter is None:
-      nparameter = self.nparameter;
-    
-    if knots is None:
-      self.knots = np.linspace(self.points[0], self.points[-1], nparameter - self.degree + 1)[1:-1];
-      self.nparameter = int(nparameter);
-    else:
-      self.knots = np.array(knots, dtype = float);
-      self.nparameter = int(knots.shape[0] + 1 + self.degree);
-
-    self.initialize_all_knots();
-    self.initialize_basis();
-    self.from_values(values);
-    
-  
-  def reknot_uniform(self):
-    """Change to uniformly spaced knots"""
-    self.reknot(nparameter = self.nparameter);
-  
-  
-  def uniform(self):
+  def uniform(self, npoints = None):
     """Make sample points and knots uniformly spaced"""
-    self.resample_uniform();
-    self.reknot(nparameter = self.nparameter);
+    self.set_points_uniform_length(npoints = npoints);
+    self.set_knots_uniform();
     
   
-  def from_values(self, values, dim = None):
+  def set_values(self, values, points = None, dimension = None):
     """Calcualte the bspline parameter for the data points y
 
     Arguments:
       values (array): values of data points
-      dim (int or None): the dimension at which to change the curve, if None change dimension to the dim of values
-      
-    Returns
-      array: the bspline parameter
+      points (array or None): sample points for the data values, if None use internal points or linspace(0,1,values.shape[0])
+      dimension (int, list or None): the dimension(s) at which to change the curve, if None change dimension to values.shape[0]
     """
-
+    values = np.array(values, dtype = float);
     if values.ndim == 1:
         values = values[:,np.newaxis];
+    vdims = range(values.shape[1]);
     
-    if dim is None:
-      vdims = range(values.shape[1]);
+    # determine the dimensions at which to change curve
+    if dimension is None:
       pdims = range(values.shape[1]);
       self.ndim = values.shape[1];
-      self.parameter = np.zeros((self.nparameter, self.ndim));
-      self.values    = np.zeros((self.npoints, self.ndim));
     else:
-      vdims = range(values.shape[1]);
-      pdims = np.array(dim, dtype = int);
-      if len(vdims) != len(pdims):
-        raise RuntimeError('inconsistent number of dimensions of values and dimension parameter!');
-      
-    if self.basis_inv is not None: # use matrix multiplication if possible
-      for v,p in zip(vdims, pdims):
-        self.parameter[:,p] = self.basis_inv.dot(values[:,v]);
-        #self.values = self.basis.dot(self.parameter);
-        self.values[:,p] = values[:,v];
+      pdims = np.array(dimension, dtype = int);
+    
+    if len(vdims) != len(pdims) or len(pdims) != values.shape[1] or max(pdims) > self.ndims:
+      raise RuntimeError('inconsistent number of dimensions %d, values %d and parameter %d and curve %d' % (values.shape[1], len(vdims), len(pdims), self.ndims));
+    
+    #set points
+    if points is None:
+      if self._points is None:
+        self.set_points(values.shape[0]);
+    else:
+      self.set_points(points);
+    
+    if values.shape[0] != self._points.shape[0]:
+      raise ValueError('number of values %d mismatch number of points %d' % (values.shape[0], self._points.shape[0]));
+    
+    
+    #set parameter from values
+    if self.with_projection and self.projection_inverse is not False:
+      self._parameter[:,pdims] = self._projection_inverse.dot(values);
+      self._values[:,pdims] = values;
     else:
       #tck,u = splprep(values, u = self.points, t = self.knots, task = -1, k = self.degree, s = 0); # splprep crashes due to erros in fitpack
       #for d in range(self.ndim):
@@ -966,249 +910,292 @@ class Curve(object):
       for v,p in zip(vdims, pdims):
         tck = splrep(self.points, values[:,v], t = self.knots, task = -1, k = self.degree);
         self.parameter[:,p] = tck[1][:self.nparameter];
-        self.values[:,p] = self.basis.dot(self.parameter[:,p]);
-
+      
+      # values will change
+      self._values = None;
+      #self._values = values; #fast but imprecise as values of spline due approximation might differ!    
   
-  def from_parameter(self, parameter, dim = None):
+  
+  def set_parameter(self, parameter, dimension = None):
     """Change parameter of the spline
     
     Arguments:
       parameter (array): the new parameter
-      dim (int or None): the dimension at which to change the curve, if None change dimension to the dim of values
+      dimension (int, list or None): the dimension(s) at which to change the curve, if None change dimension to the dim of values
     """
+    parameter = np.array(parameter, dtype = float);
     if parameter.ndim == 1:
         parameter = parameter[:, np.newaxis];
     
-    if dim is None:
-      vdims = range(parameter.shape[1]);
+    if dimension is None:
       pdims = range(parameter.shape[1]);
       self.ndim = parameter.shape[1];
-      self.parameter = np.zeros((self.nparameter, self.ndim));
-      self.values    = np.zeros((self.npoints, self.ndim));
     else:
-      vdims = range(parameter.shape[1]);
-      pdims = np.array(dim, dtype = int);
-      if len(vdims) != len(pdims):
-        raise RuntimeError('inconsistent number of dimensions of values and dimension parameter!');    
+      pdims = np.array(dimension, dtype = int);  
+      
+    if len(pdims) != parameter.shape[0] or max(pdims) > self.ndims:
+      raise RuntimeError('inconsistent number of dimensions %d, parameter %d and curve %d' % (parameter.shape[0], len(pdims), self.ndims));
     
-    for v,p in zip(vdims, pdims):
-      self.parameter[:,p] = parameter[:,v];
-      self.values[:,p] = self.basis.dot(self.parameter[:,p]);
+    self._parameter[:,pdims] = parameter;
+    
+    #values need to be updated
+    self._values = None;
   
     
-  def from_tck(self, tck, points = None, npoints = None):
+  def from_tck(self, tck, points = None):
     """Change spline parameter and knot structure using a tck object returned by splprep or splrep
     
     Arguments:
         tck (tuple): t,c,k tuple returned by splprep
+        points (int, array or None): optional sample points pecification
     """
-        
-    self.degree = tck[2];    
-    self.knots_all = tck[0];
-    self.knots = tck[0][self.degree+1:-self.degree-1];
-    self.nparameter = self.knots.shape[0] + self.degree + 1;
+    t,c,k = tck;
+    self.degree = k;
+
+    # set knots
+    self._knots = t[k+1:-k-1];  
+    self._knots_all = t;
+    self._nparameter = self._knots.shape[0] + k + 1;
     
-    c = tck[1];
+    #set parameter
     if isinstance(c, list):
-      self.ndim = len(tck[1]);
-    elif isinstance(c, np.ndarray):
-      if c.ndim > 1:
-        self.ndim = c.shape[0];
-      else:
-        self.ndim = 1;
-        c = [c];
+      c = np.vstack(c);
+    elif isinstance(c, np.ndarray) and c.ndim == 1:
+      c = np.vstack([c]);
+    c = c[:,:self._nparameter].T;
     
-    self.parameter = np.zeros((self.nparameter, self.ndim));
-    for i,cc in enumerate(c):    
-      self.parameter[:,i] = cc[:self.nparameter];
+    self.ndim = c.shape[1];    
+    self._parameter = c[:];
     
-    if points is None:
-      if npoints is None or npoints is all:
-        self.points = np.linspace(0,1,self.nparameter);
-      else:
-        self.points = np.linspace(0,1,npoints);
-    else:
-      self.points = np.array(points, dtype = float);
-    self.npoints = self.points.shape[0];
+    #set points    
+    if points is not None:
+      self.set_points(points);
     
-    self.initialize_basis();
-    
-    self.values = np.zeros((self.npoints, self.ndim));
-    for d in range(self.ndim):
-      self.values[:,d] = self.basis.dot(self.parameter[:,d]);
+    # values and projection matrix will need to be updated after change of the knots
+    self._values = None;
+    self._projection = None;
+    self._projection_inverse = None;  
+      
   
+  ############################################################################
+  ### Spline getter   
+
+  def get_values(self, points = None, parameter = None, dimension = None, derivative = 0, extrapolation = 1):
+    """Calculates the values of the curve along the sample points
     
-  def tck(self, dim = None):
+    Arguments:
+      points (array or None): the sample points for the values, if None use internal samples points
+      parameter (array or None): the bspline parameter, if None use internal parameter
+      dimensions (None, list or int): the dimension(s) for which to return values
+      derivative (int): the order of the derivative
+      extrapolation (int):  0=extrapolated value, 1=return 0, 2=raise a ValueError, 3=boundary value
+
+    Returns:
+      array: the values of the spline at the sample points
+    """
+    
+    if dimension is None:
+      dimension = range(self.ndim);
+    if isinstance(dimension,int):
+      dimension = [dimension];   
+    
+    points = self.get_points(points, error = 'sample points need to be specified for the calculation of the values of this curve!')   
+
+    if parameter is None:
+      parameter = self._parameter[:,dimension];
+    
+    if points is self._points and derivative == 0:
+      if parameter is self._parameter and self._values is not None: #cached version
+        return self._values[:,dimension];
+      if self.with_projection:
+        return self.projection.dot(parameter);
+    
+    # full interpolation
+    tck = (self._knots_all, parameter.T, self.degree);
+    values = splev(points, tck, der = derivative, ext = extrapolation);  
+    return np.vstack(values).T
+    
+    
+  def get_points_and_values(self, points = None, parameter = None, dimension = None, derivative = 0, extrapolation = 1):
+    """Calculates the values of the curve along the sample points
+    
+    Arguments:
+      points (array or None): the sample points for the values, if None use internal samples points
+      parameter (array or None): the bspline parameter, if None use internal parameter
+      dimensions (None, list or int): the dimension(s) for which to return values
+      derivative (int): the order of the derivative
+      extrapolation (int):  0=extrapolated value, 1=return 0, 2=raise a ValueError, 3=boundary value
+
+    Returns:
+      array: tha sample points
+      array: the values of the spline at the sample points
+    """
+    
+    if dimension is None:
+      dimension = range(self.ndim);
+    if isinstance(dimension,int):
+      dimension = [dimension];   
+    
+    points = self.get_points(points, error = 'sample points need to be specified for the calculation of the values of this curve!')   
+
+    if parameter is None:
+      parameter = self._parameter[:,dimension];
+    
+    if points is self._points and derivative == 0:
+      if parameter is self._parameter and self._values is not None: #cached version
+        return points, self._values[:,dimension];
+      if self.with_projection:
+        return points, self.projection.dot(parameter);
+    
+    # full interpolation
+    tck = (self._knots_all, parameter.T, self.degree);
+    values = splev(points, tck, der = derivative, ext = extrapolation);  
+    return points, np.vstack(values).T    
+    
+    
+  def __call__(self,  points = None, parameter = None, dimension = None, derivative = 0, extrapolation = 1):
+    """Calculates the values of the curve along the sample points
+    
+    Arguments:
+      points (array or None): the sample points for the values, if None use internal samples points
+      parameter (array or None): the bspline parameter, if None use internal parameter
+      dimensions (None, list or int): the dimension(s) for which to return values
+      derivative (int): the order of the derivative
+      extrapolation (int):  0=extrapolated value, 1=return 0, 2=raise a ValueError, 3=boundary value
+
+    Returns:
+      array: the values of the spline at the sample points
+    """
+    return self.get_values(parameter = parameter, points = points, dimension = dimension, derivative = derivative, extrapolation = extrapolation); 
+  
+  
+  def tck(self, dimension = None):
     """Returns a tck tuple for use with spline functions
     
     Arguments:
-      dim (None, list or int): dimensions for which to return tck tuple, if None return for all
+      dimension (None, list or int): dimension(s) for which to return tck tuple, if None return for all
       
     Returns:
       tuple: tck couple as returned by splprep
     """
-    
-    if dim is None:
-      return (self.knots_all, self.parameter.T, self.degree);
+    if dimension is None:
+      return (self._knots_all, self._parameter.T, self.degree);
     else:
-      if isinstance(dim,int):
-        dim = [dim];
-      return (self.knots_all, self.parameter[:,dim].T, self.degree);
+      if isinstance(dimension,int):
+        dimension = [dimension];
+      return (self._knots_all, self._parameter[:,dimension].T, self.degree);
   
   
-  def tck_1d(self, dim):
+  def tck_1d(self, dimension = 0):
     """Returns tck tuple for use with 1d spline functions
     
     Arguments:
-      dim (int): dimension for which to return tck tuple
+      dimension (int): dimension for which to return tck tuple
       
     Returns:
       tuple: tck couple as retyurned by splrep
     """
-    p = np.pad(self.parameter[:,dim], (0,self.degree+1), 'constant');
-    return (self.knots_all, p, self.degree);
+    k = self.degree;
+    p = np.pad(self._parameter[:,dimension], (0,k+1), 'constant');
+    return (self._knots_all, p, k);
   
   
-  def to_spline(self, dim):
+  def to_spline(self, dimension = 0):
     """Returns a Spline for a specific dimension
     
     Arguments:
-      dim (int): dimension for which to return Spline
+      dimension (int): dimension for which to return Spline
       
     Returns:
       Spline: Spline along the indicated dimension
     """
-    return Spline(tck = self.tck_1d(dim), points = self.points);
+    return Spline(tck = self.tck_1d(dimension), points = self.points);
   
   
-  def to_splines(self, dim = None):
+  def to_splines(self, dimension = None):
     """Returns list of splines for each dimension
     
     Arguments:
-      dim (None, list or int): dimensions for which to return Splines
+      dimension (None, list or int): dimensions for which to return Splines
     
     Returns:
       list: list of Splines along the indicated dimension
     """
-    if dim is None:
-      dim = range(self.ndim);
-    if isinstance(dim,int):
-      dim = [dim];
+    if dimension is None:
+      dimension = range(self.ndim);
+    if isinstance(dimension,int):
+      dimension = [dimension];
     
-    return [self.to_spline(d) for d in dim];
+    return [self.to_spline(d) for d in dimension];
   
   
-  def get_values(self, parameter = None, points = None, dim = None, derivative = 0, extrapolation = 1):
-    """Calculates the values of the curve along the sample points
-    
-    Arguments:
-      parameter (array or None): the bspline parameter, if None use internal parameter
-      points (array or None): the sample points for the values, if None use internal samples points
-      dim (None, list or int): dimensions for which to return values
-      derivative (int): the order of the derivative
-      extrapolation (int):  0=extrapolated value, 1=return 0, 2=raise a ValueError, 3=boundary value
+  ############################################################################
+  ### Spline functionality       
 
-    Returns:
-      array: the values of the spline at the sample points
-    """
-    
-    if dim is None:
-      dim = range(self.ndim);
-    if isinstance(dim,int):
-      dim = [dim];    
-    
-    if points is all:
-      points = None;
-    
-    if parameter is None:
-       if derivative == 0 and points is None: # nothing to do, simply return values
-         return self.values[:,dim];
-       else:
-         parameter = self.parameter[:,dim];
-    
-    if derivative == 0 and points is None: # evalute on different parameter set
-      values = np.zeros((self.npoints, parameter.shape[1]));
-      for i in range(parameter.shape[1]):
-        values[:,i] = self.basis.dot(parameter[:,i]);
-      return values;
-    
-    else: # full interpolation on different smaple points or derivative
-      if points is None:
-        points = self.points;
-      #pp = np.pad(parameter, (0,self.degree+1), 'constant');
-      tck = (self.knots_all, parameter.T, self.degree);
-      values = splev(points, tck, der = derivative, ext = extrapolation);  
-      return np.vstack(values).T
   
-    
-  def __call__(self, points = None, parameter = None, dim = None, derivative = 0, extrapolation = 1):
-    """Calculates the values of the curve along the sample points
-    
-    Arguments:
-      points (array or None): the sample points for the values, if None use internal samples points
-      parameter (array or None): the bspline parameter, if None use internal parameter
-      dim (None, list or int): dimensions for which to return values
-      derivative (int): the order of the derivative
-      extrapolation (int):  0=extrapolated value, 1=return 0, 2=raise a ValueError, 3=boundary value
-
-    Returns:
-      array: the values of the spline at the sample points
-    """
-    return self.get_values(parameter = parameter, points = points, derivative = derivative, extrapolation = extrapolation);
-  
- 
-  def length(self) :
+  def length(self, points = None) :
     """Returns length of the curve estimated from line segments"""
-    d = np.diff(self.values, axis = 0);
+    d = np.diff(self.get_values(points = points), axis = 0);
     return np.sum(np.sqrt(np.sum(d*d, axis = 1)));
   
     
-  def shift(self, shift):
-    """Shift curve by a vector"""
-    self.parameter += shift;
-    self.values    += shift;
+  def displace(self, value):
+    """Shift curve by a vector
+        
+    Arguments:
+      value: displace curve by this vector 
+    """
+    self._parameter += value;
+    if self._values is not None:
+      self._values += value;
+  
   
   def scale(self, factor):
-    """Scale cruve by a factor"""
-    self.parameter *= factor;
-    self.values    *= factor;
+    """Scale cruve by a factor
+            
+    Arguments:
+      factor: scale curve by this factor
+    """
+    self._parameter *= factor;
+    if self._values is not None:
+      self._values *= factor;
   
   
-  def derivative(self, n = 1, dim = None):
-    """Returns derivative as a spline
+  def derivative(self, n = 1, dimension = None):
+    """Returns derivative of the coordinates as a curve
     
     Arguments:
       n (int): order of the derivative
+      dimension (None, list or int): dimension(s) for which to return tck tuple, if None return all
       
     Returns:
-      Spline: the derivative of the spline with degree - n 
+      Curve: the derivative of the curve with degree - n 
     """
-    
     if n < 0:
-        return self.integral(-n, dim = dim);    
+      return self.integral(-n, dimension = dimension);    
     
-    if dim is None:
-      dim = range(self.ndim);
-    if isinstance(dim,int):
-      dim = [dim];       
+    if dimension is None:
+      dimension = range(self.ndim);
+    if isinstance(dimension,int):
+      dimension = [dimension];       
     
+    #tck of the derivative
     t, c, k = self.tck();
     c = list(c);
     if n > k:
         raise ValueError(("Order of derivative (n = %r) must be <= order of spline (k = %r)") % (n, k));
-
     with np.errstate(invalid='raise', divide='raise'):
       try:
         for j in range(n):
           dt = t[k+1:-1] - t[1:-k-1]
-          for d in dim:
+          for d in dimension:
             c[d] = (c[d][1:] - c[d][:-1]) * k / dt;
           t = t[1:-1];
           k -= 1;
       
       except FloatingPointError:
           raise ValueError(("The spline has internal repeated knots and is not differentiable %d times") % n);
-    tck = (t, [c[d] for d in dim], k);
+    tck = (t, [c[d] for d in dimension], k);
     
     ##alternative
     #c = [];
@@ -1220,37 +1207,36 @@ class Curve(object):
     return Curve(tck = tck, points = self.points);
   
         
-  def integral(self, n = 1, dim = None):
-    """Returns integral / anti-derivative as a spline
+  def integral(self, n = 1, dimension = None):
+    """Returns integral / anti-derivative of the coordinates as a curve
     
     Arguments:
       n (int): order of the integral
+      dimension (None, list or int): dimension(s) for which to return tck tuple, if None return all
       
     Returns:
-      Spline: the integral of the spline with degree + n  
+      Curve: the integral of the curve with degree + n  
     """
-
     if n < 0:
-        return self.derivative(-n, dim = dim);
+        return self.derivative(-n, dimension = dimension);
 
-    if dim is None:
-      dim = range(self.ndim);
-    if isinstance(dim,int):
-      dim = [dim];  
+    if dimension is None:
+      dimension = range(self.ndim);
+    if isinstance(dimension,int):
+      dimension = [dimension];  
 
+    #tck for derivative
     t, c, k = self.tck();
     c = list(c);
     for j in range(n):
         dt = t[k+1:] - t[:-k-1]
-        for d in dim:
+        for d in dimension:
           c[d] = np.cumsum(c[d] * dt) / (k + 1);
           c[d] = np.r_[0, c[d]];
-        
-        # New knots
         t = np.r_[t[0], t, t[-1]]
         k += 1
-    tck = (t, [c[d] for d in dim], k);
-
+    tck = (t, [c[d] for d in dimension], k);
+    
     ##alternative
     #c = [];    
     #for d in dim:
@@ -1261,62 +1247,97 @@ class Curve(object):
     return Curve(tck = tck, points = self.points);
     
   
-  def tanget(self):
-    """Returns a cruve representing the tanget vector along the curve"""
+  def tanget(self, points = None):
+    """Returns a cruve representing the tanget vector along the curve
+    
+    Arguments:
+      points (int, array or None): sample points used to determine the tangets
+        
+    Returns:
+      Curve: curve representing the tangents
+    """
     der = self.derivative();
     #now normalise
-    tgs = der(self.points);
+    points = self.get_points(points, error = 'cannot determine sample points needed for the calculation of the tangets');
+    tgs = der(points);
     nrm = np.linalg.norm(tgs, axis = 1);
     tgs = (tgs.T/nrm).T;
-    return Curve(values = tgs, points = self.points, knots = self.knots, degree = self.degree);
+    return Curve(values = tgs, points = points, knots = self._knots, degree = self.degree);
   
   
-  def normal(self):
-    """Returns a curve representing the normal vectors along a 2d curve"""  
+  def normal(self, points = None):
+    """Returns a curve representing the normal vectors along a 2d curve
+        
+    Arguments:
+      points (int, array or None): sample points used to determine the normals
+    
+    Returns:
+      Curve: curve representing the normals
+    """
     if self.ndim != 2:
       raise RuntimeError('normals for non 2d curves not implemented yet');
     der = self.derivative();
     #now normalise
-    nrmls = der(self.points);
+    points = self.get_points(points, error = 'cannot determine sample points needed for the calculation of the normals');
+    nrmls = der(points);
     nrmls = nrmls[:,[1,0]];
     nrm = np.linalg.norm(nrmls, axis = 1);
     nrmls = (nrmls.T/nrm).T;
-    return Curve(values = nrmls, points = self.points, knots = self.knots, degree = self.degree);
+    return Curve(values = nrmls, points = points, knots = self._knots, degree = self.degree);
   
   
-  def phi(self):
-    """Returns a Spline representing the tangent angle along a 2d curve"""
+  def phi(self, points = None):
+    """Returns a Spline representing the tangent angle along a 2d curve
+    
+    Arguments:
+      points (int, array or None): sample points used to determine the phi
+    
+    Returns:
+      Spline: spline of phi
+    """
     if self.ndim != 2:
-      raise RuntimeError('tanget angle can only be computed for 2d curves');
+      raise RuntimeError('phi angle can only be computed for 2d curves');
+    
+    points = self.get_points(points, error = 'cannot determine sample points needed for the calculation of phi');    
     
     #get the tangents  and tangent angles
-    tgs = splev(self.points, self.tck(), der = 1);
+    tgs = splev(points, self.tck(), der = 1);
     tgs = np.vstack(tgs).T;
     phi = np.arctan2(tgs[:,1], tgs[:,0]);
     phi = np.mod(phi + np.pi, 2 * np.pi) - np.pi;
     #return Spline(phi, points = self.points, knots = self.knots, degree = self.degree - 1);
-    tck = splrep(self.points, phi, s = 0.0, k = self.degree + 1);
-    return Spline(tck = tck);
+    tck = splrep(points, phi, s = 0.0, k = self.degree + 1);
+    return Spline(tck = tck, points = points);
   
   
-  def theta(self,  with_xy = False, with_length = False, with_orientation = False, reference = 0.5):
+  def theta(self, points = None, with_xy = True, with_length = True, with_orientation = True, reference = 0.5):
     """Returns a Spline representing the derivative of the tangent angle along a 2d curve
     
     Arguments:
+      points (int, array or None): sample points used to determine theta
+      with_lenth (bool): if True also return length of the curve
       with_position (bool): if True also return absolute position
       with_orientation (bool): if True also return absolute orientation of the curve
-      refernece (float): reference point for absolute position and orientation
+      reference (float): reference point for absolute position and orientation
+    
+    Returns:
+      Spline: spline of theta
+      
+    Note:
+      To fully reconstruct the curve, the center point, length and orientation is needed.
     """
     if self.ndim != 2:
-      raise RuntimeError('tanget angle can only be computed for 2d curves');
+      raise RuntimeError('theta angle can only be computed for 2d curves');
+      
+    points = self.get_points(points, error = 'cannot determine sample points needed for the calculation of theta');    
     
     #get the tangents  and tangent angles    
-    tgs = splev(self.points, self.tck(), der = 1);
+    tgs = splev(points, self.tck(), der = 1);
     tgs = np.vstack(tgs).T;
     phi = np.arctan2(tgs[:,1],tgs[:,0]);
     phi = np.mod(phi + np.pi, 2 * np.pi) - np.pi;
     #phi = Spline(phi, points = self.points, knots = self.knots, degree = self.degree + 1);
-    tck = splrep(self.points, phi, s = 0.0, k = self.degree + 1);
+    tck = splrep(points, phi, s = 0.0, k = self.degree + 1);
     phi = Spline(tck = tck);
     
     orientation = phi(reference);
@@ -1326,20 +1347,20 @@ class Curve(object):
     if with_xy:
       rtr.append(self(reference));      
     if with_length:
-      rtr.append(self.reference());       
+      rtr.append(self.length());       
     if with_orientation:
       rtr.append(orientation);
     return tuple(rtr);
   
   
-  def intersections_with_line(self, point0, point1, with_points = True, with_xy = False, nsamples = None, robust = True):
+  def intersections_with_line(self, point0, point1, with_points = True, with_xy = False, points = None, robust = True):
     """Find positions along the spline that intersect with the line segment between two points
     
     Arguments:
       point1,point2 (2 arrays): points defining the line segment
       with_points (bool): if true return the position of the intersection for the parametrizations of the curve
       with_xy (bool): if true also return the intersection points
-      nsamples (int or None): if not None, use this number of intermediate discrete sample points
+      points (int, array or None): sample points used to determine the intersections
       robust (bool): robust but slower computation
     
     Returns:
@@ -1350,14 +1371,15 @@ class Curve(object):
     return self.intersections(np.vstack([point0, point1]), with_points=with_points, with_xy=with_xy, nsamples=nsamples, robust=robust);
       
     
-  def intersections(self, curve, with_points = True, with_xy = False, nsamples = None, robust = True):
+  def intersections(self, curve, with_points = True, with_xy = False, points = None, robust = True):
     """Find the intersection between two 2d curves based on discrete sampling of the curve
     
     Arguments:
       curve (Curve): curve to intersect with
       with_points (bool): if true return the position of the intersection for the parametrizations of the curve
       with_xy (bool): if true also return the intersection points
-      nsamples (int or None): if not None, use this number of intermediate discrete sample points
+      p (int or None): if not None, use this number of intermediate discrete sample points
+      points (int, array or None): sample points used to determine the intersections
       robust (bool): robust but slower computation
     
     Returns:
@@ -1369,10 +1391,7 @@ class Curve(object):
     if self.ndim != 2:
       raise RuntimeError('tanget angle can only be computed for 2d curves');
     
-    if nsamples is None:
-      points = self.points;
-    else:
-      points = np.linspace(0,1,nsamples);
+    points = self.get_points(points, error = 'cannot determine sample points needed for the calculation of the intersections')
     
     if isinstance(curve, Curve):
       curve2 = curve(points);
@@ -1390,33 +1409,35 @@ class Curve(object):
       if with_xy:
         return xy, p1, p2;
       else:
-        return p1,p2;
+        return p1, p2;
     else:
         return xy;
   
+        
+  ############################################################################
+  ### Visualization
   
-  def plot(self, dim = None, with_points = True, **kwargs):
+  
+  def plot(self, points = None, dimension = None, with_points = True, **kwargs):
     """Plot the Curve
     
     Arugments:    
-      dim (int, tuple or None): dimensins which should be plotted
+      dimension (int, tuple or None): dimensins which should be plotted
       with_points (bool): plot curve indicating points
     """
     
     if self.ndim == 1:
-      x = self.points; 
-      y = self.values[:,0];
+      x,y = self.get_points_and_values(points = points, dimension = 0);
     else:
-      if dim is None:
-        dim = [0,1];
+      if dimension is None:
+        dimension = [0,1];
       else:
-        dim = np.array([dim], dtype = int);
-      if len(dim) > 1:
-        x = self.values[:,dim[0]];
-        y = self.values[:,dim[1]];
+        dimension = np.array([dimension], dtype = int);
+      if len(dimension) > 1:
+        x = self.get_values(points = points, dimension = dimension);
+        x,y = tuple(x.T);
       else:
-        x = self.points;
-        y = self.values[:,dim[0]];
+        x,y = self.get_points_and_values(points = points, dimension = dimension[0]);
       
     plt.plot(x,y, **kwargs);
     if with_points:
@@ -1435,26 +1456,21 @@ def theta_to_curve(theta, length = 1, xy = [0,0], orientation = 0, reference = 0
     reference (float): reference position along curve
     nsamples (int or None): number of intermediate sample points, if None use npoints
   """
+  points = theta.get_points(npoints, error = 'to convert theta into a curve number of points needs to be specified');  
+
+  #integrate  
   phi = theta.integral();
-  phi0 =  phi(reference);
-  phi.parameter += orientation - phi0; # add a constant = add constant to parameter
-  phi.values += orientation - phi0;
+  phi.add(orientation - phi(reference));
   
-  if npoints is None or npoints is all:
-    points = theta.points;
-  else:
-    points = np.linspace(0,1,npoints);
-  
+  #sample tangets
   phi = phi(points);
-  tgt = length * np.vstack([np.cos(phi), np.sin(phi)]).T;
-  tgt = Curve(tgt, nparameter = phi.nparameter);
+  tgt = Curve(length * np.vstack([np.cos(phi), np.sin(phi)]).T, points = points, knots = phi.knots);
+  
+  #integrate tangets to curve
   xyc = tgt.integral();
-  xyc0 = xyc(reference);
-  xyc.parameter += xy - xyc0;
-  xyc.values += xy - xyc0;
+  xyc.add(xy - xyc(reference));
   
   return xyc;
-
 
 
 def test():
