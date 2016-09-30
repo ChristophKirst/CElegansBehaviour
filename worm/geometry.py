@@ -33,6 +33,35 @@ from imageprocessing.contours import detect_contour, sort_points_to_line, inside
 
 
 
+
+
+
+##############################################################################
+### worm width profile
+def default_width(npoints = 21):
+  """Default width profile for a adult worm
+  
+  Arguments:
+    npoints (int): number of sample points
+    
+  Returns:
+    array: width profile
+  
+  Note: 
+    This might need to be adjusted to data / age etc or directly detected from 
+    images (see :func:`shape_from_image`).
+  """
+  def w(x):
+    a = 9.56 * 0.5;
+    b = 0.351;
+    return a * np.power(x,b)*np.power(1-x, b) * np.power(0.5, -2*b);
+  
+  if npoints is None:
+    return w;
+  else:
+    return w(np.linspace(0, 1, npoints));
+
+
 ##############################################################################
 ### Center Line Detection
 
@@ -389,37 +418,23 @@ def center_from_sides(left, right, npoints = all, nsamples = all, resample = Fal
 
 
   
-##############################################################################
+##########################################################################
 ### Center Line Bending
-
-
 
 def lift_cirular(phi):
   """Lifts circular/angular valued curve to avoid discontinuities, assumes phi in range [-pi,pi]"""
-  phip = phi >= 0;
-  phipi = np.where(phip)[0] - 1;
-  if len(phipi) > 0 and phipi[0] < 0:
-    phipi = phipi[1:];
-  
-  phin = phi < 0;
-  phini = np.where(phin)[0] - 1;
-  if len(phini) > 0 and phini[0] < 0:
-    phini = phini[1:];  
-    
-  cp = np.where(phip[phini])[0];
-  cn = np.where(phin[phipi])[0];
-  cp = phini[cp];
-  cn = phipi[cn];
+  dphi = np.diff(phi);
+  ii = np.where(dphi < -np.pi)[0]+1;
+  ip = np.where(dphi > np.pi)[0]+1;
 
   lift = np.zeros(phi.shape);
-  for i in cp:
-    lift[i+1:] += 2 * np.pi;
-  for i in cn:
-    lift[i+1:] -= 2 * np.pi;
-    
+  for i in ii:
+    lift[i:] += 2 * np.pi;
+  for i in ip:
+    lift[i:] -= 2 * np.pi;
+  
   return phi + lift;
-
-
+  
   
 def theta_from_center_discrete(center, npoints = all, nsamples = all, resample = False, smooth = 0):
   """Calculates bending angle theta along the center line using discrete mesh
@@ -547,6 +562,8 @@ def theta_from_center_spline(center, npoints = all, nsamples = all, resample = F
   return theta, orientation, xy, length
 
 
+theta_from_center = theta_from_center_discrete;
+
 
 def center_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False, smooth = 0, with_normals = False):
   """Constructs center line from theta on discrete mesh
@@ -557,7 +574,7 @@ def center_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, n
     xy (2 array): absolute position of the center line
     length (float): length of center line
     npoints (int or all): number of final sample points along center line
-    nsamples (int or all): number of smaple points to construct center line
+    nsamples (int or all): number of sample points to construct center line
     resample (bool): for resampling if True
     smooth (float): smoothing factor for final sampling
 
@@ -614,6 +631,7 @@ def center_from_theta_discrete(theta, orientation = 0, xy = [0,0], length = 1, n
     return center;
 
 
+
 def center_from_theta_spline(theta, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False, smooth = 0, with_normals = False):
   """Constructs center line from theta via spline integration
   
@@ -659,7 +677,7 @@ def center_from_theta_spline(theta, orientation = 0, xy = [0,0], length = 1, npo
   #s = np.linspace(0,1,nsamples);
   center = np.vstack([x(s),y(s)]).T;
   #center = np.vstack([[0,0], center]);
-  center = float(length) * center;
+  center = length * center;
   center += xy - np.array([x(0.5), y(0.5)]);
   
   if npoints != nsamples or resample:
@@ -680,7 +698,6 @@ def center_from_theta_spline(theta, orientation = 0, xy = [0,0], length = 1, npo
 #theta_from_center = theta_from_center_discrete;
 
 center_from_theta = center_from_theta_discrete;
-theta_from_center = theta_from_center_discrete;
 
 
 
@@ -690,19 +707,12 @@ def normals_from_theta_discrete(theta, orientation = 0, npoints = all, nsamples 
   Arguments:
     theta (nx2 array): angles along center line
     orientation (float): absolute orientation of the center line
-    xy (2 array): absolute position of the center line
-    length (float): length of center line
     npoints (int or all): number of final sample points along center line
     nsamples (int or all): number of smaple points to construct center line
     resample (bool): for resampling if True
 
   Returns
-    npointsx2 array: the sample points along the center line
-  
-  Note:
-    The theta sample length is 2 less than the curve sample length.
-    The absolute angle is integral of theta so that for discrete integration 
-    we multiply this curve with the discretized smaple length of 1/
+    npointsx2 array: the normals along the sample points for the center line
   """
 
   nt = theta.shape[0];
@@ -753,6 +763,9 @@ def normals_from_center_discrete(center):
   return normals_from_theta_discrete(theta, orientation);
   
 
+normals_from_center = normals_from_center_discrete;
+
+
 def shape_from_theta_discrete(theta, width, orientation = 0, xy = [0,0], length = 1, npoints = all, nsamples = all, resample = False, smooth = 0, with_normals = False):
   """Construct center line from theta on discrete mesh
   
@@ -760,15 +773,15 @@ def shape_from_theta_discrete(theta, width, orientation = 0, xy = [0,0], length 
     theta (nx2 array): angles along center line
     width (n array): width profile
     length (float): length of center line
-    npoints (int or all): number of final smaple points along center line
+    npoints (int or all): number of final sample points along center line
     nsamples (int or all): number of smaple points to construct center line
     resample (bool): for resampling if True
     smooth (float): smoothing factor for final sampling
 
   Returns
-    array: the sample points along the center line
     array: the sample points along the left side
     array: the sample points along the right side
+    array: the sample points along the center line
     array: the normal vector along the center points (if with_normals is True)
   
   Note:
@@ -790,9 +803,9 @@ def shape_from_theta_discrete(theta, width, orientation = 0, xy = [0,0], length 
   right = center - 0.5 * w * normals;
 
   if with_normals:
-    return center, left, right, normals
+    return left, right, center, normals
   else:
-    return center, left, right
+    return left, right, center
   
 
 
@@ -839,8 +852,6 @@ def shape_from_theta_spline(theta, width, orientation = 0, xy = [0,0], length = 
 
 
 shape_from_theta = shape_from_theta_discrete;
-#shape_from_theta = shape_from_theta_spline;
-
 
 
 def shape_from_center_discrete(center, width, normals = None):
@@ -868,6 +879,9 @@ def shape_from_center_discrete(center, width, normals = None):
   right = center - 0.5 * w * normals;
 
   return left, right
+
+
+shape_from_center = shape_from_center_discrete;
 
 
 def test_theta():
@@ -1170,8 +1184,6 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
 
 
 
-
-
 def contour_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
                        verbose = False, save = None):
   """Detect the boundary contour(s) of the worm 
@@ -1250,10 +1262,11 @@ def contour_from_image(image, sigma = 1, absolute_threshold = None, threshold_fa
 
 def head_tail_from_contour(contours, ncontour = all, delta = 0.3, smooth = 1.0, with_index = False,
                             verbose = False, save = None, image = None):
-  """Detect non self intersecting shapes of the the worm
+  """Detect candiates for head an tail positions along a contour
   
   Arguments:
-    ncontour (int): number of vertices in the contour
+    contours (tuple): tuple of arrays of contour points as returnd by contour detection
+    ncontour (int): number of samples points in the contour
     delta (float): min height of peak in curvature to detect the head
     smooth (float): smoothing to use for the countour before peak detection
     with_index (bool): return with indices of high curvature points
@@ -1272,7 +1285,7 @@ def head_tail_from_contour(contours, ncontour = all, delta = 0.3, smooth = 1.0, 
       return np.zeros((0,2));
   
   # onlt detect heads on outer contour as ts very unlikely tofind it in inner one
-  if ncontour is not all:
+  if ncontour is all:
     ncontour = contours[0].shape[0];
   
   cinterp, u = splprep(contours[0].T, u = None, s = smooth, per = 1) 
@@ -1329,7 +1342,7 @@ def head_tail_from_contour(contours, ncontour = all, delta = 0.3, smooth = 1.0, 
     return peaks;
 
 
-def normals_from_contour(contours):
+def normals_from_contour_discrete(contours):
   """Returns normal vectors along the contours
   
   Arguments:
@@ -1444,20 +1457,129 @@ def self_occlusions_from_center_discrete(center, width, margin = 0.01, shape = T
       return center[incenter];
 
 
-def phi_spline_from_contour_spline(contour):
+
+  
+def distance_shape_to_contour_discrete(left, right, normals, contour, 
+                                       search_radius = None, min_alignment = None, 
+                                       match_head_tail = False, 
+                                       verbose = False):
+  """Find distances of points on shape to positions on the contour
+  
+  Arguments:
+    left,right (nx2 array): shape 
+    normals (nx2 array): normals for the shape
+    contour (Curve): the contour curve
+    search_radius (float or array): the search radius to check for points
+    min_alignment (float or None): if not None also ensure the normals are aligned
+    verbose (bool): plot results
   """
+  
+  search_radius =  np.array(search_radius);
+  if search_radius.shape[0] < 2:
+    search_radius = np.hstack([search_radius]*2);
 
+  # normal lines along which to find intersections
+  npts = left.shape[0];
+  left_start = left - search_radius[0] * normals;
+  left_end   = left + search_radius[1] * normals;
+  right_start = right + search_radius[0] * normals;
+  right_end   = right - search_radius[1] * normals;
 
-def normals_from_contour_points(contour, points):
-  """Find normals on the spline curve contour at locations of the parameterization index points
+  distances_left  = np.zeros(npts);
+  distances_right = np.zeros(npts);
+  
+  intersection_pts_left  = np.zeros((npts,2));
+  intersection_pts_right = np.zeros((npts,2));
+  
+  for i in range(npts):
+    #intersection points
+    xy,ii,ij,pi,pj = contour.intersections(np.vstack([left_start[i], left_end[i]]),  with_xy = True, with_indices = True, with_points = True);
+
+    #occuled points:
+    if len(ii) == 0:
+      distances_left[i] = np.nan;
+      intersection_pts_left[i,:] = np.nan;
+      continue
+    
+    if min_alignment is not None:
+      cntnrmls = contour.normals(points = pi, normalize = True);
+            
+      if verbose:
+        for pt, nm in zip(xy, cntnrmls):
+          pt2 = pt + 5 * nm;
+          plt.plot([pt[0], pt2[0]],[pt[1], pt2[1]], 'k');      
+      
+      algnmt = np.dot(cntnrmls, normals[i]);
+      aligned = algnmt >= min_alignment;
+      if np.any(aligned):
+        xy = xy[aligned];
+        ii = ii[aligned];
+        ij = ij[aligned];
+        pi = pi[aligned];
+        pj = pj[aligned];
+      else:
+        distances_left[i] = np.nan;
+        intersection_pts_left[i,:] = np.nan;
+        continue
+    
+    dd = np.linalg.norm(left[i] - xy,axis =1);
+    minidx = np.argmin(dd);
+    distances_left[i] = dd[minidx];
+    intersection_pts_left[i,:] = xy[minidx];
+
+  
+  for i in range(npts):
+    #intersection points
+    xy,ii,ij,pi,pj = contour.intersections(np.vstack([right_start[i], right_end[i]]),  with_xy = True, with_indices = True, with_points = True);
+
+    #occuled points:
+    if len(ii) == 0:
+      distances_right[i] = np.nan;
+      intersection_pts_right[i,:] = np.nan;
+      continue
+    
+    if min_alignment is not None:
+      cntnrmls = contour.normals(points = pi, normalize = True);
+
+      if verbose:
+        for pt, nm in zip(xy, cntnrmls):
+          pt2 = pt + 5 * nm;
+          plt.plot([pt[0], pt2[0]],[pt[1], pt2[1]], 'k');
+
+      algnmt = np.dot(cntnrmls, -normals[i]);
+      aligned = algnmt >= min_alignment;
+      if np.any(aligned):
+        xy = xy[aligned];
+        ii = ii[aligned];
+        ij = ij[aligned];
+        pi = pi[aligned];
+        pj = pj[aligned];
+      else:
+        distances_right[i] = np.nan;
+        intersection_pts_right[i,:] = np.nan;
+        continue
+    
+    dd = np.linalg.norm(left[i] - xy,axis =1);
+    minidx = np.argmin(dd);
+    distances_right[i] = dd[minidx];
+    intersection_pts_right[i,:] = xy[minidx];
   
   
+  if verbose:
+      contour.plot(with_points = False);
+      occ = np.where(distances_left == np.nan)[0];
+      for i in range(npts):
+        plt.plot([left_start[i,0], left_end[i,0]], [left_start[i,1], left_end[i,1]], 'r');
+        plt.plot([right_start[i,0],right_end[i,0]], [right_start[i,1], right_end[i,1]], 'b');
+        plt.scatter(left[:,0],left[:,1], c = 'r', s = 60)
+        plt.scatter(right[:,0],right[:,1], c = 'b', s = 60)
+        plt.scatter(left[occ,0],left[occ,1], c = 'k', s = 40)
+        plt.scatter(right[occ,0],right[occ,1], c = 'k', s = 40)
+        plt.scatter(intersection_pts_left[:,0], intersection_pts_left[:,1], c = 'g', s = 60);
+        plt.scatter(intersection_pts_right[:,0], intersection_pts_right[:,1], c = 'm', s = 60);
+      plt.axis('equal')
   
-
-
-def match_shape_to_contour(left, right, normals, contour, sigmas = None, min_alignment = 0, search_radius = None, match_head_tail = True):
-  """Match points of the shape points n the contour
-
+  return distances_left, intersection_pts_left, distances_right, intersection_pts_right
 
 
 ##############################################################################
@@ -1470,7 +1592,7 @@ def test():
   from interpolation.resampling import resample as resample_curve
   reload(wgeo)
   
-  ## Center form sides
+  ### Center form sides
   t = np.linspace(0,10,50);
   aline = np.vstack([t, np.sin(t)+0.5]).T;
   aline[0] = [0,0];
@@ -1496,14 +1618,14 @@ def test():
   plt.plot(cline[:,0], cline[:,1]);
 
   
-  # image analysis  
+  ### Image analysis  
   reload(wgeo)
   import analysis.experiment as exp;
   img = exp.load_img(t = 100000);
   wgeo.shape_from_image(img, npoints = 15, verbose = True)
   
   
-  # contour detection
+  ### Contour detection
   reload(wgeo)
   import analysis.experiment as exp;
   i = 25620;
@@ -1532,7 +1654,7 @@ def test():
   plt.axis('equal')
     
   
-  #self occlusions
+  ### Self occlusions
   import worm.model as wm;
   reload(wgeo)
   nn = 20;
@@ -1552,6 +1674,62 @@ def test():
   pts = center[occ];
   plt.scatter(pts[:,0], pts[:,1], c ='b', s = 40);
   plt.axis('equal')
+  
+  
+  
+  ###Distance to a contour 
+  import numpy as np
+  import matplotlib.pyplot as plt
+  import worm.model as wm;
+  import worm.geometry as wgeo
+  reload(wgeo); reload(wm);
+
+  import analysis.experiment as exp
+  import scipy.ndimage.filters as filters
+  from interpolation.curve import Curve
+  from interpolation.resampling import resample as resample_curve
+
+  # load image
+  img = exp.load_img(wid = 80, t= 500000);  
+  imgs = filters.gaussian_filter(np.asarray(img, float), 1.0);
+
+  w = wm.WormModel(nparameter = 10);  
+  w.from_image(img, verbose = True);
+
+  plt.figure(1); plt.clf();
+  plt.subplot(1,2,1)
+  w.plot(image = imgs)
+
+  w.rotate(0.2);
+  plt.subplot(1,2,2);
+  w.plot(image = imgs);
+  
+  
+  cntr = wgeo.contour_from_image(imgs, sigma = 1, absolute_threshold = None, threshold_factor = 0.9, 
+                            verbose = True, save = None);
+  
+  cntr = resample_curve(cntr[0], 100);
+  contour = Curve(cntr, nparameter = 50);
+  
+  plt.figure(1); plt.clf();
+  contour.plot()
+  plt.plot(cntr[:,0], cntr[:,1], 'o')
+  
+  left,right,normals = w.shape(with_normals=True);  
+  
+  reload(wgeo); reload(wm);
+  plt.figure(5); plt.clf();
+  plt.subplot(1,2,1);
+  dl, xyl, dr, xyr = wgeo.distance_shape_to_contour_discrete(left,right,normals,contour,search_radius=[5,20], verbose = True, min_alignment=0)
+  plt.title('distance detection')
+  plt.subplot(1,2,2);
+  plt.plot(dl, 'g');
+  plt.plot(dr, 'm');
+  plt.title('distances');
+  
+  #head tail detection
+  
+  
   
   
 if __name__ == "__main__":

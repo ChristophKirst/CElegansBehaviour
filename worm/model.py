@@ -58,8 +58,9 @@ import cv2
 from scipy.interpolate import splprep, splev #,splrep,
 
 import worm.geometry as wormgeo
-#from interpolation.curve import Curve
+
 from interpolation.spline import Spline
+from interpolation.curve import Curve
 from interpolation.resampling import resample as resample_curve
 
 
@@ -70,98 +71,94 @@ from imageprocessing.masking import mask_to_phi #, curvature_from_phi
 class WormModel(object):
   """Class modeling the shape and posture and motion of a worm"""
   
-  def __init__(self, length = 40, xy = [75, 75], orientation = 0,
-               theta = None, width = None, npoints = 21, nparameter = 10):
+  def __init__(self, orientation = 0, xy = [75, 75], length = 50,
+               theta = None, width = None, npoints = 21, nparameter = 15, make_uniform = True):
     """Constructor of WormModel
     
     Arguments:
-      length (number): length of the center line of the worm [in pixel]
+      orienation (float): absolute orienation of the worm
       xy (2 array): position of the center of the center line [in pixel]
+      length (number): length of the center line of the worm [in pixel]
       theta (array, Curve or None): center bending angle (if None non bend worm)
       width (array, Curve or None): width profile (if none use default profile)
-      npoints (int): number of sample points if theta not defined
+      npoints (int): number of sample points along the center line if theta not defined
+      nparameter (int): number of parameter for the center and width splines if they are not defined
+      make_uniform (bool): if True ensure the theta and width profiles are sampling uniformly
       
     Note:
-      The number of samples form the theta curve is nsamples - 2
+      The number of sample points along center line npoints is 2 points larger than the 
+      number of sample points along theta: npoints = theta.npoints + 2
+      
+      For speed the worm model assumes equally spaced sample points for theta and width
     """
     
     self.length = float(length);
     self.xy = np.array(xy, dtype = float);
     self.orientation = float(orientation);
-    self.npoints = int(npoints);
     
-    
+    # Theta 
     if theta is None:
-      self.theta = Spline(npoints = self.npoints - 2, nparameter = nparameter, degree = 3);
+      self.theta = Spline(npoints = npoints - 2, nparameter = nparameter, degree = 3);
     elif isinstance(theta, Spline):
       self.theta = theta;
     else:
-      self.theta = Spline(values = theta, npoints = self.npoints, nparameter = nparameter, degree = 3);
-    
-    self.npoints = self.theta.npoints + 2;    
-    
+      self.theta = Spline(values = theta, nparameter = nparameter, degree = 3);
+    self.npoints = self.theta.npoints + 2; 
+    if make_uniform:
+      self.theta.set_points_uniform();
+
+    # Width
     if width is None:
-      width = self.default_width();
-      self.width = Spline(values = width, npoints = self.npoints, nparameter = nparameter, degree = 3);
+      width = wormgeo.default_width(self.npoints);
+      self.width = Spline(values = width, nparameter = nparameter, degree = 3);
     elif isinstance(width, Spline):
       self.width = width;
     else:
       self.width = Spline(values = width, nparameter = nparameter, degree = 3);
+    if make_uniform:
+      self.width.set_points_uniform();
     
-    assert self.npoints == self.width.npoints;      
+    if self.npoints != self.width.npoints:
+      raise ValueError('number of sample points along center line %d does not match sample points for width %d' % (self.npoints, self.width.npoits) );
 
-    self.nparameter = self.theta.nparameter + 3; #bend, position and orientation
-    self.nparameter_full = self.nparameter + 1 + self.width.nparameter + 1; # length + width profile + speed [theta speeds / turning speeds]
+    #Parameter 
+    self.nparameter = self.theta.nparameter + 2 + 1 + 1; #free parameter: theta, position (2) and orientation (1) and speed (1)
     
-    self.speed = 0.0;
+    self.nparameter_total = self.nparameter + 1 + self.width.nparameter ; # length + width profile
     
   
   ############################################################################
-  ### Properties
+  ### Parameter interface
     
   def get_parameter(self, full = False):
     """Parameter of the worm shape"""
+    par = np.hstack([self.theta.parameter, self.xy, self.orientation, self.speed]);
     if full:
-      return np.hstack([self.theta.parameter, self.xy, self.orientation, self.length, self.width.parameter, self.speed]) #self.speed, self.w, self.theta_speed
+      return np.hstack([par, self.length, self.width.parameter]); #self.speed, self.w, self.theta_speed
     else:
-      return np.hstack([self.theta.parameter, self.xy, self.orientation]) #self.speed, self.w, self.theta_speed
+      return par;
 
   
   def set_parameter(self, parameter):
-    """Set the parameter"""    
-    istr = 0; iend = self.bending.nparameter;
-    self.bending.from_parameter(parameter[istr:iend]);
+    """Set the parameter"""
+    istr = 0; iend = self.theta.nparameter;
+    self.theta.set_parameter(parameter[istr:iend]);
     istr, iend = iend, iend + 2;
     self.xy = parameter[istr,iend];
     istr, iend = iend, iend + 1;
-    self.orientation = parameter[istr,iend];      
+    self.orientation = parameter[istr,iend];
+    istr, iend = iend, iend + 1;
+    self.speed = parameter[istr,iend];
     if len(parameter) > self.nparameter:
       istr, iend = iend, iend + 1;
       self.length = parameter[istr,iend];
       istr, iend = iend, iend + self.width.nparameter;
-      self.width.from_parameter(parameter[istr:iend]);
-      istr, iend = iend, iend + 1;
-      self.speed = parameter[istr:iend];
-    self.update_phi();
+      self.width.set_parameter(parameter[istr:iend]);
   
   
   ############################################################################
   ### Constructors
   
-  def default_width(self):
-    """Initial guess for worm width
-    
-    Note: fit from data, adjust to data / age etc
-    """
-    def w(x):
-      a = 9.56 * 0.5;
-      b = 0.351;
-      return a * np.power(x,b)*np.power(1-x, b) * np.power(0.5, -2*b);
-    
-    self.width = w(np.linspace(0, 1, self.npoints));
-    return self.width;
-
-
   def from_shape(self, left, right, center = None, width = None, nsamples = all, nneighbours = all):
     """Initialize worm model from the left and right border lines
     
@@ -170,7 +167,7 @@ class WormModel(object):
       right (nx2 array): points of right border line
       center (nx2 array): optional center line
       width (n array): optional width of the worm
-      nsamples (int): number of intermediate sample point
+      nsamples (int): number of intermediate sample points
     """
     
     # get center line and width profile
@@ -189,11 +186,20 @@ class WormModel(object):
     else:
       center = cw;
     
-    theta, orientation, xy, length = wormgeo.theta_from_center(center, npoints = self.theta.npoints, 
+    npoints =  self.theta.npoints;
+    theta, orientation, xy, length = wormgeo.theta_from_center(center, npoints = npoints, 
                                                                nsamples = nsamples, resample=False, smooth=0);
     
-    self.theta.from_values(theta);
-    self.width.from_values(width);
+    # non uniform version
+    #oints = np.linspace(0,1,npoints-2);
+    #self.theta.set_parameter_from_values(theta, points = points);
+    #points = np.linspace(0,1,nsamples);
+    #self.width.set_parameter_from_values(width, points = points);
+    
+    #theta and width uniform
+    self.theta.set_values(theta);
+    self.width.set_values(width);
+    
     self.xy = xy;
     self.orientation = orientation;
     self.length = length;
@@ -211,13 +217,19 @@ class WormModel(object):
     theta, orientation, xy, length = wormgeo.theta_from_center(center, npoints = self.npoints, 
                                                                nsamples = nsamples, resample=False, smooth=0);
     
-    self.theta.from_values(theta);
+    
+    #points = np.linspace(0,1,self.npoints-2);
+    #self.theta.set_parameter_from_values(theta, points = points);    
+    self.theta.set_values(theta);
+    
     self.xy = xy;
     self.orientation = orientation;
     self.length = length;    
         
     if width is not None:
-      self.width.from_values(width);
+      #points = np.linspace(0,1,width.shape[0]);
+      #self.width.set_parameter_from_values(width, points = points);
+      self.width.set_values(width);
 
     
   def from_image(self, image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
@@ -251,7 +263,7 @@ class WormModel(object):
     """
     
     if npoints is all:
-      points = all;
+      points = None;
     else:
       points = np.linspace(0,1,npoints);
     
@@ -275,42 +287,34 @@ class WormModel(object):
     """
     
     if npoints is all:
-      points = all;
+      points = None;
     else:
       points = np.linspace(0,1,npoints);    
     
     theta = self.theta.get_values(points = points);
     width = self.width.get_values(points = points);
     
-    centerleftrightnormals = wormgeo.shape_from_theta(theta, width, orientation = self.orientation, 
-                             xy = self.xy, length = self.length,
-                             npoints = npoints, nsamples = all,
-                             resample=False, smooth=0, with_normals=with_normals);
+    #calcualte shape
+    centerleftrightnormals = wormgeo.shape_from_theta(theta, width, 
+                               orientation = self.orientation, xy = self.xy, length = self.length,
+                               npoints = npoints, nsamples = all, resample=False, smooth=0, 
+                               with_normals=with_normals);
+    
+    #assemble returns
     if with_normals:
-      center, left, right, normals = centerleftrightnormals;
-      if with_center:
-        if with_width:
-          return left, right, center, normals, width;
-        else:
-          return left, right, center, normals;
-      else:
-        if with_width:
-          return left, right, normals, width;
-        else:
-          return left, right, normals
+      left, right, center, normals = centerleftrightnormals;
     else:
-      center, left, right = centerleftrightnormals;
-      if with_center:
-        if with_width:
-          return left, right, center, width;
-        else:
-          return left, right, center;
-      else:
-        if with_width:
-          return left, right, width;
-        else:
-          return left, right;
-   
+      left, right, center = centerleftrightnormals;
+      normals = None;
+    res = [left, right];
+    if with_center:
+      res.append(center);
+    if with_normals:
+      res.append(normals);
+    if with_width:
+      res.append(width);
+    return tuple(res);
+  
   
   def polygon(self, npoints = all):
     """Returns polygon for the worm outline
@@ -329,6 +333,21 @@ class WormModel(object):
       poly = resample_curve(poly, npoints);
     
     return poly;
+  
+  
+  def contour(self):
+    """Returns contour of the worm as Curve
+    
+    Arguments:
+      npoints (int or None): number of sample points along one side of the worm
+    
+    Returns:
+      Curve: curve of the contour
+    """
+    
+    left, right = self.shape();
+    poly = np.vstack([left, right[::-1,:]]);
+    return Curve(poly);
   
   
   def mask(self, size = (151, 151)):
@@ -365,10 +384,6 @@ class WormModel(object):
     """
     
     return mask_to_phi(self.mask(size = size));  
-    
-  
-  def position(self):
-    return self.xy;
       
   def head(self):
     center = self.center();
@@ -466,7 +481,7 @@ class WormModel(object):
 #    self.from_center(cline, self.width);
   
   
-  def move_forward(self, distance):
+  def move_forward(self, distance, with_orientation = True, with_xy = True):
     """Move worm peristaltically forward
     
     Arguments:
@@ -477,30 +492,32 @@ class WormModel(object):
       worm in this direction.
     """
     
-    #integrated angles
-    phii = self.theta.integral();
-    phi = phii(np.linspace(0, 1, self.npoints)) - phii(0.5) + self.orientation;
-    phis = Spline(values = phi);
-    
-    #xy shift
-    dd = max(min(distance, 0.5), -0.5);
-    dp = distance - dd;
-    dx =  self.length * phis.integrate(0.5, 0.5 + distance, function = np.cos);
-    dy =  self.length * phis.integrate(0.5, 0.5 + distance, function = np.sin);
-    if dp > 0:
-      dx += np.cos(phis(1.0)) * dp * self.length;
-      dy += np.sin(phis(1.0)) * dp * self.length;
-    elif dp < 0:
-      dx += np.cos(phis(0.0)) * dp * self.length;
-      dy += np.sin(phis(0.0)) * dp * self.length;
-    self.xy += [dx,dy];
-
-    #alpha = self.theta.integrate(0.5, 0.5 + distance);
-    alpha = float(phii(0.5 + dd) - phii(0.5));
-    self.orientation += alpha;
-
     #shift theta
     self.theta.shift(distance);
+    
+    if with_orientation or with_xy:
+      dd = max(min(distance, 0.5), -0.5);
+      dp = distance - dd;    
+    
+      #integrated angles
+      phii = self.theta.integral();
+      phii.add(-phii(0.5) + self.orientation);
+    
+      #orienation
+      if with_orientation:
+        self.orientation += phii(0.5 + dd) - phii(0.5);    
+    
+      #xy shift
+      if with_xy:
+        dx =  self.length * phii.integrate(0.5, 0.5 + distance, function = np.cos);
+        dy =  self.length * phii.integrate(0.5, 0.5 + distance, function = np.sin);
+        if dp > 0:
+          dx += np.cos(phii(1.0)) * dp * self.length;
+          dy += np.sin(phii(1.0)) * dp * self.length;
+        elif dp < 0:
+          dx += np.cos(phii(0.0)) * dp * self.length;
+          dy += np.sin(phii(0.0)) * dp * self.length;
+        self.xy += [dx,dy];
   
       
   def stretch(self, factor):
@@ -519,7 +536,7 @@ class WormModel(object):
       factor (number): factor by which to scale the worm
     """
     self.length *= factor;
-    self.width.from_values(self.width.values * factor);
+    self.width.multiply(factor);
   
     
   def widen(self, factor):
@@ -528,7 +545,7 @@ class WormModel(object):
     Arguments:
       factor (number): factor by which to scale the worm width
     """
-    self.width.from_values(self.width.values * factor);
+    self.width.multiply(factor);
     
   
 #  def curve(self, mode_amplitudes):
@@ -597,22 +614,25 @@ class WormModel(object):
 
 
 def test():
+  import numpy as np
   import matplotlib.pyplot as plt
   import worm.model as wm;
   reload(wm);
-  ws = wm.WormModel();
+  w = wm.WormModel();
   
-  
-  
-  
-  
-  mask = ws.mask();
+  mask = w.mask();
   
   plt.figure(1); plt.clf();
+  plt.subplot(1,2,1);
+  w.plot();
+  plt.subplot(1,2,2);
   plt.imshow(mask);
   
-  
-  
+   
+  w.theta.add(np.pi);
+  plt.figure(2); plt.clf();
+  w.plot();
+  plt.axis('equal')
 
 
 if __name__ == "__main__":

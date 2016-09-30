@@ -9,14 +9,15 @@ __docformat__ = 'rest'
 
 
 import numpy as np
+import warnings
 
 from scipy.linalg import lu;
 
-def curve_intersections_discrete(xy1, xy2, robust  = True):
+def curve_intersections_discrete(xy1, xy2 = None, robust  = True):
   """Returns intersection points and indices between two curves
   
   Arguments:
-    xy1,xy2 (nx2 array): sample points along curve
+    xy1,xy2 (nx2 array): sample points along curve, curves van be split via nans
     robust (bool): if true additional checks for duplication on boundary are performed
   
   Returns:
@@ -29,6 +30,12 @@ def curve_intersections_discrete(xy1, xy2, robust  = True):
 
   x1 = xy1[:,0];
   y1 = xy1[:,1];
+  
+  if xy2 is None:
+    xy2 = xy1;
+    self_intersect = True;
+  else:
+    self_intersect = False;  
   x2 = xy2[:,0];
   y2 = xy2[:,1];
 
@@ -51,12 +58,21 @@ def curve_intersections_discrete(xy1, xy2, robust  = True):
   maxy1 = np.max([y1[:-1], y1[1:]], axis = 0);
   maxy2 = np.max([y2[:-1], y2[1:]], axis = 0);
   
-  
-  i,j = np.where((np.repeat(minx1[:,np.newaxis], n2, axis = 1) <= np.repeat(maxx2[np.newaxis,:], n1, axis = 0)) &  
+  with warnings.catch_warnings():
+    warnings.simplefilter("ignore");
+    i,j = np.where((np.repeat(minx1[:,np.newaxis], n2, axis = 1) <= np.repeat(maxx2[np.newaxis,:], n1, axis = 0)) &  
                  (np.repeat(minx2[np.newaxis,:], n1, axis = 0) <= np.repeat(maxx1[:,np.newaxis], n2, axis = 1)) &
                  (np.repeat(miny1[:,np.newaxis], n2, axis = 1) <= np.repeat(maxy2[np.newaxis,:], n1, axis = 0)) &  
                  (np.repeat(miny2[np.newaxis,:], n1, axis = 0) <= np.repeat(maxy1[:,np.newaxis], n2, axis = 1)));
 
+  if self_intersect:
+  	keep = np.logical_not(np.logical_or(np.isnan(np.sum(dxy1[i,:] + dxy2[j,:], axis = 1)), j <= i + 1));
+  else:
+  	keep = np.logical_not(np.isnan(np.sum(dxy1[i,:] + dxy2[j,:], axis = 1)));
+
+  i = i[keep];
+  j = j[keep];
+  
   if len(i) == 0:
     return np.zeros((0,2)), i,i,j,j;
   
@@ -150,6 +166,29 @@ def test():
   plt.scatter(xy0[:,0], xy0[:,1], c = 'm', s = 40);
   plt.axis('equal')
   
+
+  # test line segments deparated by nans
+  import numpy as np
+  import matplotlib.pyplot as plt;
+  import interpolation.intersections as ii;
+  reload(ii)
+  
+  s = 2 * np.pi* np.linspace(0,1,150);
+  xy1 = np.vstack([np.cos(s), np.sin(2*s)]).T;
+  #xy2 = np.vstack([0.5 * s, 0.2* s]).T + [-2,-0.5];
+  #xy2[40:80,:] = np.nan;
+  xy2 = np.array([[-2,-0.5],[-0.1, -0.1], [np.nan,np.nan], [0.1, 0.1], [2, 0.5]]);
+  
+  xy0,i,j,di,dj = ii.curve_intersections_discrete(xy1, xy2);
+  
+  plt.figure(1); plt.clf();
+  plt.plot(xy1[:,0], xy1[:,1]);
+  plt.plot(xy2[:,0], xy2[:,1]);
+  plt.scatter(xy0[:,0], xy0[:,1], c = 'm', s = 40);
+  plt.axis('equal')
+  
+  
+
 
 if __name__ == "__main__":
   test();
