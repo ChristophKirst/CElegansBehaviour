@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Spline module to handle spline functions
+Discrete function
 
-This module provides a basic class to handle curves represented as splines,
-in particular mappings between spline parameter and curve spaces
+This module provides a basic class to handle functions represented as discrete points
 """
 
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
