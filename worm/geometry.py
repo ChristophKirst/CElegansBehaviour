@@ -279,7 +279,7 @@ def center_from_sides_mean(left, right, npoints = all, nsamples = all, resample 
     return center, width
   else:
     return center;
-
+    
 
 def center_from_sides_erosion(left, right, erode = 0.1, maxiter = 100, delta = 0.3, ncontour = 100, smooth = 1.0, npoints = all, nsamples = all, resample = False, with_width = False, verbose = False):
   """Finds middle line between the two side curves by simply taking the mean
@@ -393,6 +393,9 @@ def center_from_sides_erosion(left, right, erode = 0.1, maxiter = 100, delta = 0
     return center, width
   else:
     return resample_curve(center, npoints);
+    
+    
+
 
 
 def center_from_sides(left, right, npoints = all, nsamples = all, resample = False, with_width = False, smooth = 0,  nneighbours = all, method = 'projection'):
@@ -1299,6 +1302,45 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
   return success, center, left, right, width
 
 
+
+def center_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, with_sides = False, with_width = True, npoints = 21, verbose = False, save = None):
+ """Detect non-self-intersecting center lines of the worm from an image
+  
+  Arguments:
+    image (array): the image to detect venterline of worm from
+    sigma (float or None): width of Gaussian smoothing on image, if None use raw image
+    absolute_threshold (float or None): if set use this as the threshold, if None the threshold is set via Otsu
+    threshold_level (float): in case the threshold is determined by Otsu multiply by this factor
+    with_sides (bool): if True also detect side lines of the worm
+    with_width (bool): if True also detect width profile of the worm
+    npoints (int): number of sample points along the center line
+    verbose (bool): plot results
+    save (str or None): save result plot to this file
+  
+  Returns:
+    array (npointsx2): center line
+    array (npointsx2): width
+    array (npointsx2): left,right
+  """
+  
+  ### smooth image
+  if sigma is not None:
+    imgs = filters.gaussian_filter(np.asarray(image, float), sigma);
+  else:
+    imgs = image;
+   
+  ### get contours
+  if absolute_threshold is not None:
+    level = absolute_threshold;
+  else:
+    level = threshold_factor * threshold_otsu(imgs);
+  
+  imgth = imgs < level;  
+  skel = skeletonize(imgth);
+  
+    
+  
+  
 
 def contour_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
                        verbose = False, save = None):
