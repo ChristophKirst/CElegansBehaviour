@@ -443,7 +443,7 @@ class WormModel(object):
     
     return mask_to_phi(self.mask(size = size));  
   
-    
+  
   def head(self):
     center = self.center();
     return center[0];

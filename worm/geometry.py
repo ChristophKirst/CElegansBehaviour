@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 
 import shapely.geometry as geom
 from skimage.filters import threshold_otsu
+from skimage.morphology import skeletonize
 
 import scipy.ndimage.filters as filters
 from scipy.interpolate import splev, splprep, UnivariateSpline
@@ -25,13 +26,15 @@ from scipy.interpolate import splev, splprep, UnivariateSpline
 from scipy.spatial import Voronoi
 
 from interpolation.spline import Spline
+from interpolation.curve import Curve
+
 from interpolation.resampling import resample as resample_curve
 
 from signalprocessing.peak_detection import find_peaks
 
 from imageprocessing.contours import detect_contour, sort_points_to_line, inside_polygon;
-
-
+from imageprocessing.skeleton_graph import skeleton_to_adjacency
+  
 
 
 
@@ -1303,16 +1306,14 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
 
 
 
-def center_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, with_sides = False, with_width = True, npoints = 21, verbose = False, save = None):
- """Detect non-self-intersecting center lines of the worm from an image
+def center_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, npoints = 21, smooth = 0, verbose = False, save = None):
+  """Detect non-self-intersecting center lines of the worm from an image
   
   Arguments:
     image (array): the image to detect venterline of worm from
     sigma (float or None): width of Gaussian smoothing on image, if None use raw image
     absolute_threshold (float or None): if set use this as the threshold, if None the threshold is set via Otsu
     threshold_level (float): in case the threshold is determined by Otsu multiply by this factor
-    with_sides (bool): if True also detect side lines of the worm
-    with_width (bool): if True also detect width profile of the worm
     npoints (int): number of sample points along the center line
     verbose (bool): plot results
     save (str or None): save result plot to this file
@@ -1329,17 +1330,57 @@ def center_from_image(image, sigma = 1, absolute_threshold = None, threshold_fac
   else:
     imgs = image;
    
-  ### get contours
+  ### get worm foreground
   if absolute_threshold is not None:
     level = absolute_threshold;
   else:
     level = threshold_factor * threshold_otsu(imgs);
-  
   imgth = imgs < level;  
+  
+  ### skeletonize
   skel = skeletonize(imgth);
   
-    
+  ### convert skeleton to line 
+  # Note: here we return an error in case this is not a trivial line with two endpoints
+  # potentiall can extend to detect overlapping shapes etc
+  x,y = np.where(skel);
+  adj = skeleton_to_adjacency(skel)
   
+  # find end points:
+  nhs = np.array([len(v) for v in adj.values()]);
+  ht = np.where(nhs == 1)[0];
+  
+  if len(ht) != 2:
+    raise RuntimeError('skeletonization detected %d possible heat/tail locations' % len(ht));
+  
+  e = adj.keys()[ht[1]];  
+  p = adj.keys()[ht[0]];  
+  xy = np.zeros((len(adj), 2));
+  xy[0] = p;
+  i = 1;
+  p0 = p;
+  while p != e:
+    neighbrs = adj[p];
+    if neighbrs[0] != p0:
+      p0, p = p, neighbrs[0];
+    else:
+      p0, p = p, neighbrs[1];
+    xy[i] = p; i+=1;
+  xy = xy[:,::-1];
+  
+  #Note: could add head tail positions detected in contour  and width detection here
+  
+  ### resample and plot result  
+  if verbose:
+    plt.imshow(imgs)
+    plt.plot(xy[:,0], xy[:,1], 'y')    
+    
+  xy = resample_curve(xy, npoints = npoints, smooth = smooth)
+  
+  if verbose:
+    plt.plot(xy[:,0], xy[:,1], 'r')
+  
+  return xy;
   
 
 def contour_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
@@ -1771,11 +1812,69 @@ def distance_shape_to_contour_discrete(left, right, normals, contour,
 
       if match_head_tail is not None:
         plt.scatter(match_head_tail[:,0], match_head_tail[:,1], c = 'y', s = 100);
+        if head_match is not None:
+          head= left[0]; match_xy = match_head_tail[head_match];
+          plt.plot([match_xy[0], head[0]], [match_xy[1], head[1]], c = 'k');
+          plt.scatter(head[0], head[1], c = 'purple', s = 100);
+        if tail_match is not None:
+          tail= left[-1]; match_xy = match_head_tail[tail_match];
+          plt.plot([match_xy[0], tail[0]], [match_xy[1], tail[1]], c = 'k');
+          plt.scatter(tail[0], tail[1], c = 'orange', s = 100);
+
+          
         
   if match_head_tail is not None:
     return distances_left, intersection_pts_left, distances_right, intersection_pts_right, distance_head, head_match, distance_tail, tail_match
   else:
     return distances_left, intersection_pts_left, distances_right, intersection_pts_right
+
+
+### Cost functions
+
+# each non nan distance left/rightt is counted + renormalized
+
+def cost_from_distance(res):
+  dl, xy_l, dr, xy_r, dh, hm, dt, tm = res;
+  wlr = 0.75;
+  wht = 0.25;
+  cost = 0;
+  
+  for d in [dl, dr]:
+    idx_nan = np.isnan(d);
+    idx_good = np.logical_not(idx_nan);
+    if np.any(idx_good):
+      cost += np.sum(d[idx_good]) / np.sum(idx_good) * wlr;
+    else:
+      cost += 0.0; # no penalty for no overlaps at this point
+  
+  for d in [dh, dt]:
+    if d is not None:
+      cost += d * 0.5 * wht;
+  return cost;
+    
+
+def cost_from_contours(model, contours):
+  head_tail_xy = head_tail_from_contour((contours[0],), ncontour = all, delta = 0.3, smooth = 1.0, with_index = False,
+                                             verbose = False, save = None);
+  left,right,normals = model.shape(with_normals=True);  
+  cntr = resample_curve(contours[0], 100);
+  contour = Curve(cntr, nparameter = 50);         
+  res = distance_shape_to_contour_discrete(left,right,normals,contour,
+                                           search_radius=[5,20], min_alignment=0, match_head_tail=head_tail_xy,
+                                           verbose = False);                                            
+  return cost_from_distance(res);
+
+
+def cost_from_image(model, image):  
+  cntrs = contour_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.9, 
+                             verbose = False, save = None);
+  return cost_from_contours(model, cntrs);
+                                              
+
+
+
+
+
 
 
 ##############################################################################
@@ -1889,7 +1988,7 @@ def test():
   img = exp.load_img(wid = 80, t= 500000);  
   imgs = filters.gaussian_filter(np.asarray(img, float), 1.0);
 
-  w = wm.WormModel(nparameter = 10);  
+  w = wm.WormModel(npoints = 21);  
   w.from_image(img, verbose = True);
 
   plt.figure(1); plt.clf();
@@ -1965,8 +2064,8 @@ def test():
   res = wgeo.distance_shape_to_contour_discrete(left,right,normals,contour,
                                                 search_radius=[5,20], min_alignment=0, match_head_tail=head_tail_xy,
                                                 verbose = True);
-                                                
-  #this can be fed into kalman filter
+ 
+
   
  
 if __name__ == "__main__":

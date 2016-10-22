@@ -19,6 +19,7 @@ import os
 import glob
 import numpy as np
 
+import scipy.ndimage.filters as filters 
  
 ############################################################################
 ### File locations
@@ -95,21 +96,27 @@ def load(strain = 'n2', dtype = 'xy', wid = all, stage = all,
 
 ## worm images
 
-def load_img(strain = 'n2', wid = 80, t = all):
+def load_img(strain = 'n2', wid = 80, t = all, smooth = None):
   """Loads cropped worm images"""
   
   fn = filename(strain = strain, dtype = 'img', wid = wid);
   imgdata = np.load(fn, mmap_mode = 'r');
   if t is all:
-    return imgdata;
+    img = imgdata;
   else:
     tl = np.array([t]).flatten();
     img = imgdata[tl];
-    
-    if isinstance(t,int):
-      return img[0];
-    else:
-      return img;
+  
+  if smooth is not None:
+    imgs = np.zeros(img.shape);
+    for i,im in enumerate(img):
+      imgs[i] = filters.gaussian_filter(np.asarray(im, float), smooth);
+    img = imgs;
+  
+  if isinstance(t,int):
+    return img[0];
+  else:
+    return img;
 
 
 
