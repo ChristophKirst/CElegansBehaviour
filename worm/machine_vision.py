@@ -49,11 +49,11 @@ class ImageGenerator(object):
     else:
       self.t_counter += stride;
   
-  def get_image(self, stride = 1, random = False, smooth = 1.0):
+  def get_image(self, stride = 1, random = False, sigma = 1.0):
     if random:
       wc = np.random.randint(0, self.nwids);
       t = np.random.randint(self.tmins[wc], self.tmaxs[wc]);
-      img = exp.load_img(strain = self.strains[wc], wid = self.wids[wc], t = t, smooth = smooth);
+      img = exp.load_img(strain = self.strains[wc], wid = self.wids[wc], t = t, sigma = sigma);
     else:
       t = self.t_counter;
       wid = self.wids[self.wid_counter];
@@ -290,11 +290,6 @@ def test():
   
   #test network
   o = net.output.eval(session = net.session, feed_dict = {net.input : ig.get_image()})
-  
-  phi = net.get_phi(ig.get_image());
-  plt.figure(1); plt.clf();
-  plt.imshow(phi[0]);
-  
   
   plt.figure(2); plt.clf();
   net.plot_results(ig.get_image());

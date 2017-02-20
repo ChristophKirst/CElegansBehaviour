@@ -15,11 +15,13 @@ import tensorflow as tf
 
 import analysis.experiment as exp
 
+import interpolation.resampling as ir
+
 import worm.geometry as wgeo
 
 class ImageGenerator(object):
   """Generate Images and Phi's from data set"""
-  def __init__(self, wids = [80,96], strains = ['n2']*2, tmins = [400000]*2, tmaxs = [500000]*2, smooth = 1.0, skeleton_size = 200, head_tail_size = 4):
+  def __init__(self, wids = [80,96], strains = ['n2']*2, tmins = [400000]*2, tmaxs = [500000]*2, smooth = 1.0, contour_size = 200, contour_inner = 50):
     self.wids = wids;
     self.strains = strains;
     self.tmins = tmins;
@@ -35,8 +37,9 @@ class ImageGenerator(object):
     img = self.get_image(random = True);
     self.image_size = img.shape[1:3];
     
-    self.skeleton_size = skeleton_size;
-    self.head_tail_size = head_tail_size;    
+    self.contour_size = contour_size;
+    self.contour_inner = contour_inner;
+
    
   def increase_counter(self, stride = 1):
     tc = self.t_counter;
@@ -65,34 +68,24 @@ class ImageGenerator(object):
     img.shape = (1,) + img.shape + (1,);
     return img;
   
-  def skel_from_image(self, img, threshold = 75):
-    #return msk.mask_to_phi(img < threshold);
-    skel, ht =  wgeo.skeleton_from_image_discrete(img, absolute_threshold=threshold, with_head_tail = True);
-    nht = self.head_tail_size;
-    #n = min(nht, ht.shape[0]);
-    ht = np.pad(skel[ht], [(0,nht),(0,0)], 'constant');
-    #return skel, ht[:nht], n
-    return skel, ht[:nht];
+  def contour_from_image(self, img, threshold = 75):
+    cntrs = wgeo.contours_from_image(img, sigma = 1, absolute_threshold = threshold, verbose = False, save = None);
+    nc = len(cntrs);
+    if nc == 1:
+      return ir.resample(cntrs[0], self.contour_size);
+    else:
+      return np.vstack([ir.resample(cntrs[0], self.contour_size-self.contour_inner), ir.resample(cntrs[1], self.contour_inner)]);
   
   def get_batch(self, nimages = 1, stride = 1, random = False, threshold = 75):
     imgs = np.zeros((nimages,) + self.image_size + (1,));
-    skels = -1000 * np.ones((nimages, self.skeleton_size, 2)); #default is far out of reach
-    #valids = np.zeros(nimages);
-    hts = -1000 * np.ones((nimages, self.head_tail_size, 2));
-    #htvs = np.zeros(nimages);
-    
-    #phis = np.zeros((nimages,) + self.image_size + (1,));
+    cntrs = np.zeros((nimages, self.contour_size, 2));
     for i in range(nimages):
       imgs[i,:,:,:] = self.get_image(random = random, stride = stride)[0];
-      #skel, ht, v = self.skel_from_image(imgs[i,:,:,0]);
-      skel, ht = self.skel_from_image(imgs[i,:,:,0]);
-      nskel = min(skel.shape[0], self.skeleton_size);
-      skels[i,:nskel,:] = skel[:nskel, :];
-      #valids[i] = nskel;
-      hts[i, :] = ht[:];
-      #htvs[i] = v;
-    #return (imgs, skels, valids, hts, htvs);
-    return (imgs, skels, hts)
+      cntrs[i] = self.contour_from_image(imgs[i,:,:,0]);
+      #n = min(c.shape[0], self.contour_size);
+      #cntrs[i,:n,:] = c[:n, :];
+
+    return (imgs, cntrs)
 
 
 
@@ -109,9 +102,8 @@ class WormVision(object):
     self.nparameter = model.nparameter;
     self.npoints = self.nparameter /2;
     
-    self.skeleton_size = images.skeleton_size;    
-    self.head_tail_size = images.head_tail_size;    
-    
+    self.contour_size = images.contour_size;    
+
     self.create_network(nparameter = self.nparameter, image_size = self.image_size);
     self.create_training();
     
@@ -179,6 +171,12 @@ class WormVision(object):
     x = tf.nn.bias_add(x, b)
     return tf.nn.relu(x)    
   
+
+  def create_cost_distance(self, l, r, d):
+    dd = tf.reduce_sum(tf.squared_difference(l,r), reduction_indices=1);
+    dd = tf.squared_difference(dd, d);
+    return tf.reduce_mean(dd);
+  
   def create_cost_soft_min_distance(self, c, s):
     """Creates a soft-min distance of the centers to the points"""
     c_shape = c.get_shape().as_list();        
@@ -199,112 +197,77 @@ class WormVision(object):
     distmin = tf.reduce_sum(tf.mul(tf.nn.softmax(tf.scalar_mul(tf.constant(-1.0,"float32"), dist2)), dist2),reduction_indices = 1);
     return tf.reduce_mean(distmin);
   
-  
-  def create_cost_soft_min_distance_valid(self, c, s, v):
-    """Creates a soft-min distance of the centers to the points"""
-    c_shape = c.get_shape().as_list();        
-    s_shape = s.get_shape().as_list();
-    
-    #expand matrices
-    cc = tf.reshape(c, [c_shape[0], c_shape[1], c_shape[2], 1]);    
-    mm = tf.reduce_max(v); #hack for batch size = 1
-    ss = tf.slice(s, [0,0,0], [-1,mm,-1]);
-    ss = tf.reshape(ss, [s_shape[0], s_shape[1], s_shape[2], 1]);
-    ss = tf.transpose(ss, perm = [0,3,2,1]);
-    cc = tf.tile(cc, [1, 1, 1, s_shape[0]]);
-    ss = tf.tile(ss, [1, c_shape[0], 1, 1]);
-    
-    #pairwise distances
-    dist2 = tf.sqrt(tf.reduce_sum(tf.squared_difference(cc,ss), reduction_indices = 2));
-    dist2 = tf.reduce_mean(dist2, reduction_indices=0); # hack: get rid of batches here 
-    
-    #softmin
-    distmin = tf.reduce_sum(tf.mul(tf.nn.softmax(tf.scalar_mul(tf.constant(-1.0,"float32"), dist2)), dist2),reduction_indices = 1);
-    return tf.reduce_mean(distmin);
-  
-  def create_cost_spacing(self, c):
+  def create_cost_spacing(self, c, length, normalized = True):
+    c_shape = c.get_shape().as_list();
     c1 = tf.slice(c, [0,1,0], [-1,-1,-1]);
-    c2 = tf.slice(c, [0,0,0], [-1,self.npoints-1,-1]);
+    c2 = tf.slice(c, [0,0,0], [-1,c_shape[1]-1,-1]);
     d = tf.sqrt(tf.reduce_sum(tf.squared_difference(c1,c2), reduction_indices = 2));
-    return tf.reduce_mean(tf.squared_difference(d, tf.constant(self.model.length / (self.npoints-1), "float32")));
+    if normalized:
+      return tf.reduce_mean(tf.squared_difference(d, tf.constant(length / (c_shape[1]-1), "float32")));
+    else:
+      return tf.reduce_mean(tf.squared_difference(d, tf.constant(length, "float32")));
     
   def create_cost_bending(self, c):
+    c_shape = c.get_shape().as_list();
     c1 = tf.slice(c, [0,1,0], [-1,-1,-1]);
-    c2 = tf.slice(c, [0,0,0], [-1,self.npoints-1,-1]);
+    c2 = tf.slice(c, [0,0,0], [-1,c_shape[1]-1,-1]);
     dc = tf.sub(c1,c2);
     dc1 = tf.slice(dc, [0,1,0], [-1,-1,-1]);
-    dc2 = tf.slice(dc, [0,0,0], [-1,self.npoints-2,-1]);
+    dc2 = tf.slice(dc, [0,0,0], [-1,c_shape[1]-2,-1]);
     dn1 = tf.sqrt(tf.reduce_sum(tf.square(dc1), reduction_indices =2));
     dn2 = tf.sqrt(tf.reduce_sum(tf.square(dc2), reduction_indices =2));
     dp = tf.reduce_sum(tf.mul(dc1, dc2), reduction_indices =2);
     dp = tf.div(tf.div(dp, dn1), dn2);
     return tf.mul(tf.constant(-1.0, "float32"), tf.reduce_mean(dp));
   
-#  def create_cost_head_tail(self, c, ht, v):
-#      h = tf.slice(c, [0,0,0], [-1,1,-1]); t = tf.slice(c, [0,self.npoints-1,0], [-1,1,-1]);
-#      cht = tf.concat(1, [h,t]);      
-#      
-#      c_shape = cht.get_shape().as_list();    
-#      #expand matrices
-#      cc = tf.reshape(c, [c_shape[0], c_shape[1], c_shape[2], 1]);    
-#      mm = tf.reduce_max(v); #hack for batch size = 1
-#      hh = tf.slice(ht, [0,0,0], [-1,mm,-1]);
-#      h_shape = hh.get_shape().as_list();
-#      hh = tf.reshape(hh, [h_shape[0], h_shape[1], h_shape[2], 1]);
-#      hh = tf.transpose(hh, perm = [0,3,2,1]);
-#      cc = tf.tile(cc, [1, 1, 1, s_shape[0]]);
-#      ss = tf.tile(ss, [1, c_shape[0], 1, 1]);
-#    
-#      #pairwise distances
-#      dist2 = tf.sqrt(tf.reduce_sum(tf.squared_difference(cc,ss), reduction_indices = 2));
-#      dist2 = tf.reduce_mean(dist2, reduction_indices=0); # hack: get rid of batches here 
-#    
-#      #softmin
-#      distmin = tf.reduce_sum(tf.mul(tf.nn.softmax(tf.scalar_mul(tf.constant(-1.0,"float32"), dist2)), dist2),reduction_indices = 1);
-#      return tf.reduce_mean(distmin);      
-#      
-#      
-#      cost_head_tail = self.create_cost_min_distance(cht, ht, v);
-#      cost = tf.add(cost, tf.mul(tf.constant(weight_head_tail, "float32"), cost_head_tail));
-  
-  def create_cost(self, c, s, weight_spacing = 1.0, weight_bending = 1.0): #, weight_head_tail = 1.0):
-    cost_skeleton = self.create_cost_soft_min_distance(c, s);
-    cost_distance = self.create_cost_spacing(c);
-    cost = tf.add(cost_skeleton, tf.mul(tf.constant(weight_spacing, "float32"),  cost_distance));
+  def create_cost_side(self, s, b, length = 1.0, weight_spacing = 1.0, weight_bending = 1.0):
+    cost = self.create_cost_soft_min_distance(s, b);
+    if weight_spacing != 0:
+      cost_spacing = self.create_cost_spacing(s, length);
+      cost = tf.add(cost, tf.mul(tf.constant(weight_spacing, "float32"),  cost_spacing));
     if weight_bending != 0:
-      cost_bending = self.create_cost_bending(c);
+      cost_bending = self.create_cost_bending(s);
       cost = tf.add(cost, tf.mul(tf.constant(weight_bending, "float32"), cost_bending));
-    #if weight_head_tail != 0 and ht is not None:
-    #
+    return cost;
+
+  def create_cost(self, l, r, b, w, length, weight_spacing = 1.0, weight_bending = 1.0, weight_distance = 1.0):
+    #left right boundaries
+    #length = self.model.length;
+    cost_left = self.create_cost_side(l,b, length, weight_spacing = weight_spacing, weight_bending = weight_bending);
+    cost_right= self.create_cost_side(r,b, length, weight_spacing = weight_spacing, weight_bending = weight_bending);
+    
+    #keep distance between sides of worm
+    cost_dist = self.create_cost_distanace(l,r, w);
+    
+    cost = tf.add(cost_left, cost_right);
+    cost = tf.add(cost, tf.mul(tf.constant(weight_distance, "float32"), cost_dist));
     return cost;
   
   def create_training(self, weight_spacing = 1.0, weight_bending = 1.0, weight_head_tail = 1.0):
     """Create the cost function and trainer"""
-    self.skeleton = tf.placeholder("float32", [1, self.skeleton_size, 2]);
-    #self.skeleton_valid = tf.placeholder("int32", [1]);
-    #self.head_tail = tf.placeholder("float32", [1, self.head_tail_size, 2]);
-    #self.head_tail_valid = tf.placeholder("int32", [1]);
-    
-    #self.cost = self.create_cost(self.output, self.skeleton, self.skeleton_valid, self.head_tail, self.head_tail_valid, 
-    #                             weight_spacing = weight_spacing, weight_bending = weight_bending); #, weight_head_tail = weight_head_tail);
-    self.cost = self.create_cost(self.output, self.skeleton, weight_spacing = weight_spacing, weight_bending = weight_bending); 
+    #self.left = tf.placeholder("float32", [1, self.npoints, 2]);
+    #self.right = tf.placeholder("float32", [1, self.npoints, 2]);
+    self.width = tf.placeholder("float32", [self.npoints]);
+    self.contour = tf.placeholder("float32", [1, self.contour_size, 2]);
+
+    #self.cost = self.create_cost(self.output, self.skeleton, weight_spacing = weight_spacing, weight_bending = weight_bending); 
     
     #trainer
-    self.trainer = tf.train.RMSPropOptimizer(0.00025,0.99,0.0,1e-6).minimize(self.cost)
+    #self.trainer = tf.train.RMSPropOptimizer(0.00025,0.99,0.0,1e-6).minimize(self.cost)
   
   #def get_cost(self, images, skeleton, skeleton_valid, head_tail, head_tail_valid):
   #  return self.cost.eval(session = self.session, feed_dict = {self.input : images, self.skeleton : skeleton, self.skeleton_valid : skeleton_valid, 
   #                                                             self.head_tail : head_tail, self.head_tail_valid : head_tail_valid});    
 
-  def get_cost(self, images, skeleton):
-    return self.cost.eval(session = self.session, feed_dict = {self.input : images, self.skeleton : skeleton});    
+  #def get_cost(self, images, skeleton):
+  #  return self.cost.eval(session = self.session, feed_dict = {self.input : images, self.skeleton : skeleton});    
   
-  def train(self, nsamples = 1, verbose = False, random = True):
-    """Train the network on a batch of images"""
-    imgs, skels = self.images.get_batch(nimages = nsamples, random = random);
-    self.trainer.run(session = self.session, feed_dict={self.input : imgs, self.skeleton : skels})
-    if verbose:
-      self.plot_results(imgs);
+  #def train(self, nsamples = 1, verbose = False, random = True):
+  #  """Train the network on a batch of images"""
+  #  imgs, skels = self.images.get_batch(nimages = nsamples, random = random);
+  #  self.trainer.run(session = self.session, feed_dict={self.input : imgs, self.skeleton : skels})
+  #  if verbose:
+  #    self.plot_results(imgs);
   
   
   def set_parameter(self, output):
@@ -350,7 +313,7 @@ def test():
   import tensorflow as tf
   import matplotlib.pyplot as plt;
   import worm.model as wm;
-  import worm.machine_vision_2 as wmv
+  import worm.machine_vision_3 as wmv
   import worm.geometry as wgeo
   
   reload(wgeo)
@@ -365,33 +328,39 @@ def test():
   
   ig.t_counter = 500000 + 25620 - 5;
   ig.wid_counter = 0;
+
   imgs, cntrs = ig.get_batch(nimages = 1);
-  img = imgs[0,:,:,0];
+  img = imgs[0,:,:,0]; cntr = cntrs[0];
   w.from_image(img)  
 
   plt.figure(20); plt.clf();
-  wgeo.skeleton_from_image_discrete(img, verbose = True, with_head_tail=True)
-  w.plot();
+  #wgeo.skeleton_from_image_discrete(img, verbose = True, with_head_tail=True)
+  w.plot(image = img);
+  plt.scatter(cntr[:,0], cntr[:,1])
   
   # target
   ig.t_counter = 500000 + 25620 - 1;
   ig.wid_counter = 0;
   #imgs, skels, valids, hts, htvs = ig.get_batch(nimages = 1);
-  imgs, skels, hts = ig.get_batch(nimages = 1);
-  imgt = imgs[0,:,:,0];
+  imgs, cntrs = ig.get_batch(nimages = 1);
+  imgt = imgs[0,:,:,0]; cntrt = cntrs[0];
   plt.figure(21); plt.clf();
-  wgeo.skeleton_from_image_discrete(imgt, verbose = True, with_head_tail=True, absolute_threshold=75)
-  w.plot()
+  w.plot(image = imgt);
+  plt.scatter(cntrt[:,0], cntrt[:,1])
   
   
   ### Cost functions 
-  wb = 2; ws = 1.0; 
+  wb = 2; ws = 1.0; wd = 2.0
   
-  par = net.create_variable(net.output.get_shape());
-  skel = tf.constant(skels, "float32");
+  npts = w.npoints;
+  left = net.create_variable([1, npts]);
+  right = net.create_variable([1, npts]);
   
+  width = tf.constant(w.width, "float32");
+  length = tf.constant(w.length, "float32");
+  contour = tf.constant(cntrs, "float32");
   
-  cost = net.create_cost(par, skel, weight_bending = wb, weight_spacing = ws);
+  cost = net.create_cost(left, right, contour, width,  weight_bending = wb, weight_spacing = ws);
   cost_bend = net.create_cost_bending(par);
   cost_spacing = net.create_cost_spacing(par);
   cost_dist = net.create_cost_soft_min_distance(par, skel);
@@ -465,7 +434,7 @@ def test():
       plt.pause(0.1);
 
 
-
+  
   import shapely.geometry as geom
   cntrs = wgeo.contours_from_image(imgt)
   poly = geom.Polygon(cntrs[0], [cntrs[i] for i in range(1,len(cntrs))]);
@@ -482,23 +451,20 @@ def test():
   ax.add_patch(patch2)
   plt.xlim(0,151); plt.ylim(1,151)
   plt.show()
+  
+  
+  
+  ### make boundary pts in tensorflow
+  
+  npoints = 21;
+  width = tf.placeholder("float32", shape = [npoints,2]);
+  
+  
+  
 
-
-
-### make boundary pts in tensorflow
-
-#npoints = 21;
-#width = tf.placeholder("float32", shape = [npoints,2]);
-
-
-
-
-
-    
-    
-
-
-
+  
+  
+  
 
 
 

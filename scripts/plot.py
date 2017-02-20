@@ -28,7 +28,6 @@ mpl.rcParams['image.interpolation'] = 'none'
 mpl.rcParams['image.cmap'] = 'viridis'
 mpl.rcParams['figure.autolayout'] = True;
 mpl.rcParams['figure.figsize'] = (21,14);
-mpl.rcParams['figure.facecolor'] = 'w'
 
 
 def colormap_lut(color = 'viridis', ncolors = None):
@@ -453,7 +452,7 @@ def plot_embedding_contours(Y, contours = 10, cmap = plt.cm.plasma, xmin = None,
   
   #print xmin,xmax,ymin,ymax
   dx = float(xmax-xmin) / npts;
-  dy = float(ymax-ymin) / npts;
+  dy = float(xmax-xmin) / npts;
   xx, yy = np.mgrid[xmin:xmax:dx, ymin:ymax:dy]
   positions = np.vstack([xx.ravel(), yy.ravel()])
   kernel = st.gaussian_kde(Y.T);
@@ -480,8 +479,6 @@ def plot_embedding_contours(Y, contours = 10, cmap = plt.cm.plasma, xmin = None,
   #ax.clabel(cset, inline=1, fontsize=10)
   ax.set_xlabel('Y0')
   ax.set_ylabel('Y1')
-  
-  return (kernel, f)
       
 
 

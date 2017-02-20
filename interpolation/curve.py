@@ -783,7 +783,7 @@ class Curve(Spline):
 
 
 def theta_to_curve(theta, length = 1, xy = [0,0], orientation = 0, reference = 0.5, points = None):
-  """Construct a 2d curve from the center bending angle
+  """Construct a 2d curve from a center bending angle
   
   Arguments:
     theta (Spline): center bending angles as spline

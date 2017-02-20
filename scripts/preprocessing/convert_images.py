@@ -10,103 +10,97 @@ __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
 __author__ = 'Christoph Kirst <ckirst@rockefeller.edu>'
 __docformat__ = 'rest'
 
-# check cam data:
+import os, glob
 import matplotlib.pyplot as plt;
 import scipy.io
 import numpy as np
 
+import analysis.experiment as exp
 
-import experiment as exp
-reload(exp)
+import scripts.preprocessing.file_order as fo;
+exp_names = fo.experiment_names;
+dir_names = fo.directory_names;
 
-wxy = exp.load(wid = 96, valid_only=False);
+nworms = len(exp_names)
 
+# wid = 90 , fid = 61, '/run/media/ckirst/CElegans_N2/CElegansBehaviour/Experiment/RawData/Results290416exp/CAM814A3/shortCAM814A3CAM814_2016-04-29-171847-0061.mat'
+# is corrupt!
 
-i = 0;
-i = 2;
-
-i += 1;
-#fn = '/data/Science/Projects/CElegansBehaviour/Experiment/CAM814A4/corrdCAM814A4CAM814_2015-11-20-174505-%04d.mat' % i;
-fn = '/data/Science/Projects/CElegansBehaviour/Experiment/CAM819A3/corrdCAM819A3CAM819_2015-09-14-175453-%04d.mat' % i;
-
-data = scipy.io.loadmat(fn)
-xy = data['x_y_coor']
-
-plt.figure(10); plt.clf();
-plt.subplot(3,1,1);
-plt.plot(xy[:,0] - xy[0,0])
-plt.subplot(3,1,2);
-plt.plot(wxy[:(xy.shape[0]),0]- wxy[0,0])
-plt.title(str(i));
-
-
-# test offset:
-d = np.zeros(xy.shape[0]- 10);
-for off in range(len(d)):
-  xyo = xy[off:,0] - xy[off,0];
-  delta = xyo - (wxy[:xyo.shape[0],0] - wxy[0,0])
-  d[off] = np.abs(delta).sum() / delta.shape[0];
-plt.subplot(3,1,3);
-plt.plot(d)
-plt.title( 'min=%f  n=%d' % (d.min(), np.argmin(d)));
-
-## CAM814A4 -> i = 22, shift = 561 for wid = 80
-## CAM819A3 -> i = 22, shift = 135 wor wid = 96
-
-### Convert data sets into numyp arrays to match xy data
 
 ## Convert Worm Images
 
-wids = [80, 96];
-
-startfile = [22,22];
-startindex = [561,135];
-
-fileformat = ['/data/Science/Projects/CElegansBehaviour/Experiment/CAM814A4/shortCAM814A4CAM814_2015-11-20-174505-%04d.mat',
-              '/data/Science/Projects/CElegansBehaviour/Experiment/CAM819A3/shortCAM819A3CAM819_2015-09-14-175453-%04d.mat'];
-
-filesave = ['/data/Science/Projects/CElegansBehaviour/Experiment/Data/n2_img_w=80_s=all.npy',
-            '/data/Science/Projects/CElegansBehaviour/Experiment/Data/n2_img_w=96_s=all.npy']
-
-# find the number of data points
-
-idx = 1;
-wid = wids[idx];
-sf = startfile[idx];
-si = startindex[idx];
-ff = fileformat[idx];
-fs = filesave[idx];
-
-wxy = exp.load(wid = wid);
-n = wxy.shape[0];
-
-dat = scipy.io.loadmat(ff % sf)['mydata'][0];
-
-imgs = np.zeros((n, 151, 151), dtype = 'uint8')
-for i in range(n):
-  print 'step: %d/%d fid:%d,%d' % (i,n, sf, si)
-  img = dat[si];
-  #check for format otherwise pad
-  if img.ndim != 3:
-    print 'image has different dimensionas: %s, step: %d/%d fid:%d,%d' % (str(img.ndim), i,n, sf, si)
-    img = np.zeros((151,151,3), dtype = 'uint8');
-  if img.shape != (151,151,3):
-    print 'image has different shape: %s, step: %d/%d fid:%d,%d' % (str(img.shape), i,n, sf, si)
-    median = np.median(img);
-    img2 = median * np.ones((151,151,3), dtype = 'uint8');
-    img2[:min(151, img.shape[0]), :min(151, img.shape[1]), :min(3, img.shape[2])] = img[:min(151, img.shape[0]), :min(151, img.shape[1]), :min(3, img.shape[2])];
-    img = img2;
+for wid in range(91, nworms):
+  #file_data = os.path.join(dir_names[wid], 'short%s-%s.mat' % ('%04d'));
+  file_data = np.sort(np.unique(np.array(glob.glob(os.path.join(dir_names[wid], 'short*.mat')))));
+  nf = len(file_data);
   
-  img  = img.sum(axis = 2)/3;
-  imgs[i] = img;
+  file_save = os.path.join(exp.data_directory, 'Images/n2_img_w=%d_s=all.npy' % wid);
   
-  si += 1;
-  if si == dat.shape[0]:
-    sf+=1;
-    dat = scipy.io.loadmat(ff % sf)['mydata'][0];
-    si = 0;
+  wxy = exp.load(wid = wid);
+  n = wxy.shape[0];
+  
+  si = 0;
+  sf = 0;
+  dat = scipy.io.loadmat(file_data[sf])['mydata'][0];
+  
+  imgs = np.zeros((n, 151, 151), dtype = 'uint8')
+  
+  for i in range(n):
+    print 'wid: %d  step: %d/%d fid:%d,%d' % (wid, i,n, sf, si)
+    img = dat[si];
+    #check for format otherwise pad
+    if img.ndim != 3:
+      print 'image has different dimensionas: %s, step: %d/%d fid:%d,%d' % (str(img.ndim), i,n, sf, si)
+      img = np.nan * np.ones((151,151,3), dtype = 'uint8');
+    if img.shape != (151,151,3):
+      print 'image has different shape: %s, step: %d/%d fid:%d,%d' % (str(img.shape), i,n, sf, si)
+      #break;
+      #median = np.median(img);
+      img2 = np.nan * np.ones((151,151,3), dtype = 'uint8');
+      
+      img2[:min(151, img.shape[0]), :min(151, img.shape[1]), :min(3, img.shape[2])] = img[:min(151, img.shape[0]), :min(151, img.shape[1]), :min(3, img.shape[2])];
+      img = img2;
+    
+    img  = img.sum(axis = 2)/3;
+    imgs[i] = img;
+    
+    si += 1;
+    if si == dat.shape[0]:
+      sf += 1;
+      if sf < nf:
+        dat = scipy.io.loadmat(file_data[sf])['mydata'][0];
+        si = 0;
+      else:
+        break;
+  
+  np.save(file_save, imgs)
 
-np.save(fs, imgs)
+
+
+
+
+
+
+plt.figure(1); plt.clf();
+for i in range(3):
+  plt.subplot(2,3,i+1);
+  plt.imshow(img[:,:,i]);
+plt.subplot(2,3,4);
+imgt = np.sum(img, axis = 2)/3;
+plt.imshow(imgt)
+  
+import scipy.ndimage.filters as filters 
+sigma = 1.0;
+imgs = filters.gaussian_filter(np.asarray(imgt, float), sigma);
+plt.subplot(2,3,5);
+plt.imshow(imgs)
+
+# remove backgroung noise
+
+plt.subplot(2,3,6);
+imgf = imgs.copy();
+imgf[imgf > 90] = 90;
+plt.imshow(imgf)
 
 
 
@@ -156,3 +150,38 @@ np.save(fs, imgs)
 #  plt.subplot(10,1,i);  
 #
 #  plt.plot(wxy[:10000,0]-wxy[0,0])
+
+
+
+### Find double start experiments
+
+
+dest_dir = '/run/media/ckirst/WormData1/CElegansBehaviour/Experiment/N2_Fails/Results201016/';
+
+
+dir_names = fo.create_directory_names(base_directory='/run/media/ckirst/My Book/')
+
+import glob
+import shutil as su
+
+for i,d in enumerate(dir_names):
+  l = glob.glob(os.path.join(d, 'short*0000.mat'));
+  if len(l)> 1:
+    ln = [os.path.split(c)[-1] for c in l]
+    print i,d, ln;
+
+    fns = glob.glob(os.path.join(d, "*%s*" % ln[0][5:37]));
+    
+    dd = os.path.join(dest_dir, os.path.split(d[:-1])[-1]);
+    #if not os.path.exists(dd):
+    #  os.mkdir(dd);
+    
+    fns_dest = [os.path.join(dd, os.path.split(f)[-1]) for f in fns];
+    
+    #for f,g in zip(fns, fns_dest):
+      #print '%s -> %s' % (f,g)
+      #su.move(f,g);
+    
+    #print fns_dest;
+
+

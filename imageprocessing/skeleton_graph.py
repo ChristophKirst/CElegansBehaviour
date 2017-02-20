@@ -117,6 +117,8 @@ def skeleton_to_list(skeleton, with_neighborhoods = True):
       return ids;
 
 
+from collections import OrderedDict
+
 def skeleton_to_adjacency(skeleton):
   """Converts a binary skeleton image to a graph
 
@@ -129,7 +131,7 @@ def skeleton_to_adjacency(skeleton):
   
   ids,nh = skeleton_to_list(skeleton, with_neighborhoods = True);
  
-  adj = {}; 
+  adj = OrderedDict(); 
   if len(ids) == 0:
     return adj;
     #return nx.from_dict_of_lists(adj);
