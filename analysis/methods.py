@@ -38,14 +38,6 @@ def binned_average(x, bin_size = 10, function = np.nanmean):
 
 
 
-def bin_data(d, bins):
-  """Bin the data according to the specified ranges"""
-  bins_start, bins_end = bins;
-  nbins_total = bins_start.shape[1];
-  binned = np.zeros((d.shape[0], nbins_total));
-  for i in range(d.shape[0]):
-    binned[i,:] = np.array([np.mean(d[i,s:e]) for s,e in zip(bins_start[i], bins_end[i])]);
-  return binned;
 
 
 

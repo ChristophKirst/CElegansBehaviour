@@ -43,12 +43,13 @@ def wormimage(strain = 'n2', wid = 0, t = 0, size = None, xy = None, worm = None
     
   if roi is None:
     roi = exp.load_roi(strain = strain,  wid = wid);
-  xmm = [roi[0]-roi[2]-border, roi[0]+roi[2]+border];
-  ymm = [roi[1]-roi[2]-border, roi[1]+roi[2]+border];
+  xmm = [int(np.floor(roi[0]-roi[2]-border)), int(np.ceil(roi[0]+roi[2]+border))];
+  ymm = [int(np.floor(roi[1]-roi[2]-border)), int(np.ceil(roi[1]+roi[2]+border))];
   #print xmm,ymm
   
   if size is None:
     size = (xmm[1]-xmm[0], ymm[1]-ymm[0]);
+    #size = [int(np.ceil(s)) for s in size];
     
   # create image
   img = np.ones(size, dtype = int) * background;
