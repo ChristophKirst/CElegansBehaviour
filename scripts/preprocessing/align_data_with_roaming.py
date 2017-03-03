@@ -125,7 +125,7 @@ def align(wid = 0, verbose = True):
 
   return a;
 
-
+align(wid = 1, verbose = True)
 
 a = [align(wid= w) for w in range(nworms)]
 

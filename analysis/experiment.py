@@ -118,7 +118,13 @@ def load(strain = 'n2', dtype = 'xy', wid = all, stage = all,
   return data;
 
 
-def load_img(strain = 'n2', wid = 80, t = all, sigma = None):
+def smooth_image(img, sigma = 1.0):
+  if sigma is not None:
+    return filters.gaussian_filter(np.asarray(img, float), sigma);
+  else:
+    return img;
+
+def load_img(strain = 'n2', wid = 0, t = all, sigma = None):
   """Loads cropped worm images"""
   
   fn = filename(strain = strain, dtype = 'img', wid = wid);
@@ -132,7 +138,7 @@ def load_img(strain = 'n2', wid = 80, t = all, sigma = None):
   if sigma is not None:
     imgs = np.zeros(img.shape);
     for i,im in enumerate(img):
-      imgs[i] = filters.gaussian_filter(np.asarray(im, float), sigma);
+      imgs[i] = smooth_image(im, sigma = sigma);
     img = imgs;
   
   if isinstance(t,int):
@@ -331,6 +337,7 @@ def load_aligned(strain = 'n2', wid = all, dtype = 'speed', align = 'L1'):
     a = a[0];
   
   return a;
+
 
 
 ############################################################################

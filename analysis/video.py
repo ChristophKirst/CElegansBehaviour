@@ -7,82 +7,137 @@ Video Generator
 """
 
 import os
+import time
+
 import numpy as np;
 
-import matplotlib.pyplot as plt
-
-#dir_behaviour = '/home/ckirst/Science/Projects/CElegansBehaviour/Analysis/WormBehaviour/Code';
-#os.chdir(dir_behaviour)
+import matplotlib.pyplot as plt;
+import matplotlib.patches as patches;
 
 import analysis.experiment as exp;
-#import scripts.preprocessing.file_order as fo;
 
-#import analysis.plot as fplt
 
-# remove backgroung noise
+import matplotlib.animation as manimation
 
-def wormimage(strain = 'n2', wid = 0, t = 0, size = None, xy = None, worm = None, roi = None, background = 90, sigma = 1.0, border = 75):
-  """Plot the worm in full position frame"""
+
+###############################################################################
+### Frame generation
+###############################################################################
+
+def round_xy(xy):
+  """Pixel position of image"""
+  return np.array(np.round(np.array(xy, dtype = float)), dtype = int);
+  #return np.array(np.floor(xy), dtype = int);
+  #return np.array(np.ceil(xy), dtype = int);
+
+
+def generate_image_extent(xy, xylim, worm_size, plot_range):
+  """Generate extent of the worm image within the plotting area"""
+  x0 = max(xy[0] - xylim[0][0] - worm_size[0]/2, 0);
+  x1 = min(xy[0] - xylim[0][0] + worm_size[0]/2 + 1, plot_range[0]);
+  y0 = max(xy[1] - xylim[1][0] - worm_size[1]/2, 0);
+  y1 = min(xy[1] - xylim[1][0] + worm_size[1]/2 + 1, plot_range[1]);
+  return (x0,x1,y0,y1);
+
+
+def generate_image_data(strain = 'n2', wid = 0, t = 0, size = None, xy = None, worm = None, roi = None, background = None, sigma = 1.0, border = 75):
+  """Generate data and parameter to plot worm image data"""
+  # load worm image
+  if worm is None:
+    worm = exp.load_img(strain = 'n2', wid = wid, t = t, sigma = sigma);
+  else:
+    worm = exp.smooth_image(worm.copy(), sigma);
+    
+  worm_size = worm.shape;
+  if background is not None:
+    worm[worm > background] = background; 
+  #print worm.shape
   
   # load position
   if xy is None:
     xy = exp.load(strain = strain, wid = wid, dtype = 'xy');
     xy = xy[t,:];
-  xy = np.array(np.round(xy), dtype = int);
+  xy = round_xy(xy); 
   
-  
-  # load worm image
-  if worm is None:
-    worm = exp.load_img(strain = 'n2', wid = wid, t = t, sigma = sigma);
-  else:
-    worm = worm.copy();
-  worm_size = worm.shape;
-  if background is not None:
-    worm[worm > background] = background; 
-  #print worm.shape
-    
   if roi is None:
     roi = exp.load_roi(strain = strain,  wid = wid);
-  xmm = [int(np.floor(roi[0]-roi[2]-border)), int(np.ceil(roi[0]+roi[2]+border))];
-  ymm = [int(np.floor(roi[1]-roi[2]-border)), int(np.ceil(roi[1]+roi[2]+border))];
+    
+  # plot limits
+  xlim = [int(np.floor(roi[0]-roi[2]-border)), int(np.ceil(roi[0]+roi[2]+border))];
+  ylim = [int(np.floor(roi[1]-roi[2]-border)), int(np.ceil(roi[1]+roi[2]+border))];
   #print xmm,ymm
   
   if size is None:
-    size = (xmm[1]-xmm[0], ymm[1]-ymm[0]);
-    #size = [int(np.ceil(s)) for s in size];
+    plot_range = (xlim[1]-xlim[0], ylim[1]-ylim[0]);
+  else:
+    plot_range = size;
     
+  extent = generate_image_extent(xy, [xlim, ylim], worm_size, plot_range)
+    
+  # place worm image
+  return (worm, xy, roi, [xlim,ylim], extent, plot_range)
+
+
+def worm_image(strain = 'n2', wid = 0, t = 0, size = None, xy = None, worm = None, roi = None, background = None, sigma = 1.0, border = 75):
+  """Generate image of the worm at spatial location in full plate"""
+  worm, xy, roi, xylim, extent, plot_range = generate_image_data(strain = strain, wid = wid, t = t, size = size, 
+                                                        xy = xy, worm = worm, roi = roi, 
+                                                        background = background, sigma = sigma, border = border)
+  
   # create image
   img = np.ones(size, dtype = int) * background;
   
-  # place worm image
-  #print xy, xmm, worm_size
-  x0 = max(xy[0] - xmm[0] - worm_size[0]/2, 0);
-  x1 = min(xy[0] - xmm[0] + worm_size[0]/2 + 1, size[0]);
-  y0 = max(xy[1] - ymm[0] - worm_size[1]/2, 0);
-  y1 = min(xy[1] - ymm[0] + worm_size[1]/2 + 1, size[1]);
+  if np.any(np.isnan(extent)):
+    return img;
+  
+  x0, x1, y0, y1 = extent;
   xr = x1 - x0;
   yr = y1 - y0;  
   #img[x0:x1, y0:y1] = worm[:xr, :yr];
-  img[y0:y1, x0:x1] = worm[:yr,:xr];
+  if xr > 0 and yr > 0:
+    img[y0:y1, x0:x1] = worm[:yr,:xr];
   
   return img;
 
 
-def compose_frames(strain = 'n2', wid = 0, times = range(0,10), size = (1500, 1500), xy = None, 
-                   features = ['speed', 'rotation', 'roam'], history = 10, history_delta = 1,
-                   cmap = plt.cm.rainbow, linecolor = 'gray', border = 75, save = None):
-  plt.clf();
-  fig = plt.gcf();
+def plot_worm(strain = 'n2', wid = 0, t = 0, size = None, xy = None, worm = None, roi = None, background = None, sigma = 1.0, border = 75, vmin = 60, vmax = 90, cmap = plt.cm.gray):
+  """Plot worm at position in full plate"""
+  worm, xy, roi, xylim, extent, plot_range = generate_image_data(strain = strain, wid = wid, t = t, size = size, 
+                                                        xy = xy, worm = worm, roi = roi, 
+                                                        background = background, sigma = sigma, border = border);
   
-  if xy is all:
-    xy  = exp.load(strain = strain, wid = wid, dtype = 'xy');
-    
+  center = np.array(np.array(plot_range) /2, dtype = int);
+  ax = plt.gca();
+
+  # draw plate outline  
+  #r =roi[3];  
+  r = center[0] - border;
+  ax.add_artist(plt.Circle((center[0], center[1]), r, color = 'black',fill = False, linewidth = 1))
+  ax.set_xlim(0, plot_range[0]);
+  ax.set_ylim(0, plot_range[1]);
+  
+  # place worm image
+  if np.any(np.isnan(extent)):
+    return ax;
+  
+  ax.imshow(worm, extent = extent, vmin = vmin, vmax = vmax, cmap = cmap);
+  return ax;
+  
+
+def generate_feature_data(strain = 'n2', wid = 0, features = [], feature_filters = None):
+  """Generate feature data"""
+  if feature_filters is None:
+    feature_filters = [None for f in features];
+  
   feature_data = [];
   feature_label = [];
-  for f in features:
+  for f,ff in zip(features, feature_filters):
     if isinstance(f, str):
       feature_label.append(f);
-      feature_data.append(exp.load(strain = strain, wid = wid, dtype = f));
+      dat = exp.load(strain = strain, wid = wid, dtype = f);
+      if ff is not None:
+        dat = ff(dat);
+      feature_data.append(dat);
     elif isinstance(f, tuple):
       feature_label.append(f[0]);
       feature_data.append(f[1]);
@@ -90,92 +145,238 @@ def compose_frames(strain = 'n2', wid = 0, times = range(0,10), size = (1500, 15
       feature_label.append('feature');
       feature_data.append(f);
   
-  roi = exp.load_roi(strain = strain, wid = wid);
-  xmm = [roi[0]-roi[2]-border, roi[0]+roi[2]+border];
-  ymm = [roi[1]-roi[2]-border, roi[1]+roi[2]+border];  
+  return (feature_label, feature_data);
   
-  nplt = len(feature_data);  
-  
-  for t in times:
-    plt.clf();
-    
-    # plot image + trajectory
-    ax = plt.subplot(1,2,1);
-    img = wormimage(strain = strain, wid = wid, t= t, xy = xy[t], roi = roi, border = border);
-    #print img.dtype, img.max(), img.min(), img.shape
-    sh = img.shape;
-    plt.imshow(img, cmap = plt.cm.gray);
+def generate_feature_indicator(strain = 'n2', wid = 0, feature_indicator = None):
+  """Generate data for the feature indicator"""
+  if isinstance(feature_indicator, basestring):
+    feature_indicator = exp.load(strain = strain, wid = wid, dtype = feature_indicator);
+    feature_indicator[np.isnan(feature_indicator)] = 0.0;
+    feature_indicator = np.array(feature_indicator, dtype = bool);
+  return feature_indicator;
 
-    ax.add_artist(plt.Circle((sh[0]/2,sh[1]/2),sh[0]/2-border, color = 'black',fill = False, linewidth = 1))
 
-    t0 = max(0, t - history * history_delta); 
-    nt = len(range(t0, t+1, history_delta));
-    
-    if xy is not None:
-      #plt.scatter(xy[t0:t+1,1] - ymm[0], xy[t0:t+1,0] - xmm[0], c = np.arange(nt), cmap = cmap, edgecolor = 'face')
-      plt.scatter(xy[t0:t+1:history_delta,0] - xmm[0], xy[t0:t+1:history_delta,1] - ymm[0], c = np.arange(nt), cmap = cmap, edgecolor = 'face')  
+def animate_frames(strain = 'n2', wid = 0,  
+                size = None, xy = None, roi = None, 
+                background = None, sigma = 1.0, border = 75, vmin = 60, vmax = 90, cmap = plt.cm.gray,
+                times = all,
+                features = ['speed', 'rotation'], feature_filters = None, history = 10, history_delta = 1, linecolor = 'gray', 
+                feature_indicator = 'roam',
+                time_data = None, time_cmap = plt.cm.rainbow, time_size = 30,
+                time_stamp = True, sample_rate = 3,
+                pause = 0.01, 
+                save = None, fps = 20, dpi = 300,
+                verbose = True):
+  """Animate frames and generate video"""
+           
+  if times is all:
+    t = 0;
+  else:
+    t = times[0];
   
+  xynans = np.nan * np.ones(history);
+  
+  # memmap to images
+  worm = exp.load_img(strain = strain, wid = wid);
+  
+  # xy positions
+  if xy is None:
+    xy = exp.load(strain = strain, wid = wid, dtype = 'xy');
+
+  if times is all:    
+    times = (0, len(xy));
+  
+  if isinstance(time_data, basestring):
+    time_data = exp.load(strain = strain, wid = wid, dtype = time_data);
+  
+  # initialize image data
+  wormt, xyt, roi, xylim, extent, plot_range = generate_image_data(strain = strain, wid = wid, t = times[0], size = size, 
+                                                        xy = xy[t], worm = worm[t], roi = roi, 
+                                                        background = background, sigma = sigma, border = border);
+                                                        
+  # initialize feature data                                                      
+  feature_label, feature_data = generate_feature_data(strain, wid, features, feature_filters);
+  nplt = len(feature_data)
+  ncols = 1 + int(nplt > 0);
+  
+  # create plot
+  fig = plt.gcf(); plt.clf();
+  ax = plt.subplot(1,ncols,1);
+  ax.set_xticks([])
+  ax.set_yticks([])
+  ax.set_axis_off();
+  
+  # draw plate outline
+  center = np.array(np.array(plot_range) /2, dtype = int);
+  r = center[0] - border;
+  ax.add_artist(plt.Circle((center[0], center[1]), r, color = 'black', fill = False, linewidth = 0.5))
+  ax.set_xlim(0, plot_range[0]);
+  ax.set_ylim(0, plot_range[1]);
+  
+  # place worm image
+  wimg = ax.imshow(wormt, extent = extent, vmin = vmin, vmax = vmax, cmap = cmap);
+    
+  # plot history of trace
+  def generate_xy(t):
+    hsteps = int(t / history_delta) + 1; # number of available steps in the past
+    if hsteps - history > 0:
+      t0 = t - history_delta * (history - 1);
+      t1 = 0;
+    else:
+      t0 = t - history_delta * (hsteps - 1);
+      t1 = -hsteps;
+    
+    xdat = xynans.copy();
+    ydat = xynans.copy();
+    xdat[t1:] = xy[t0:t+1:history_delta,0] - xylim[0][0]
+    ydat[t1:] = xy[t0:t+1:history_delta,1] - xylim[1][0]
+    return [xdat, ydat], t0, t1;
+  
+  if history > 0:
+    xydat, t0, t1 = generate_xy(t);
+    if time_data is None:
+      cdat = np.linspace(0,1,history);
+      vmin = 0;
+      vmax = 1;
+    else:
+      cdat = xynans.copy();
+      cdat[t1:] = time_data[t0:t+1:history_delta];
+      vmin = np.nanmin(time_data);
+      vmax = np.nanmax(time_data);
+    
+    scatter = plt.scatter(xydat[0], xydat[1], c = cdat, cmap = time_cmap, edgecolor = 'none', vmin = vmin, vmax = vmax, s = time_size)  ;
+    
+    # feature plots
     iplt = 0;
+    pl = [];
     for fl,fd in zip(feature_label, feature_data):
-      iplt+=1
-      plt.subplot(nplt,2, iplt * 2);
-      plt.plot(fd[t0:t+1:history_delta], c = linecolor);
-      plt.scatter(np.arange(nt), fd[t0:t+1:history_delta], c = np.arange(nt), cmap = cmap, edgecolor = 'face')
-      plt.title(fl);
-      
-    plt.show();
-    plt.pause(0.01);
+      iplt += 1;
+      plt.subplot(nplt, ncols, iplt * 2);
+      pl.append(plt.plot(fd[t0:t+1:history_delta], c = linecolor));
+      #plt.scatter(np.arange(nt), fd[t0:t+1:history_delta], c = np.arange(nt), cmap = cmap, edgecolor = 'face')
+      plt.title(fl);      
+  
+  else:
+      scatter = None;
+  
+  # plot feature indicator
+  feature_indicator = generate_feature_indicator(strain, wid, feature_indicator);
+  if feature_indicator is not None:
+    if feature_indicator[t]:
+      fc = 'r';
+    else:
+      fc = 'w';
+    posfac = 0.95; sizefac = 0.03;
+    feature_rect = patches.Rectangle((posfac * plot_range[0], posfac * plot_range[1]),  sizefac * plot_range[0], sizefac * plot_range[1], edgecolor = None, facecolor = fc);
+    ax.add_patch(feature_rect);
+    
+  if time_stamp:
+    font = {'size': 6 }
+    tt = time.strftime("%H:%M:%S", time.gmtime(0))
+    time_stamp = plt.text(10, 10, tt, fontdict = font)
+  
+  if save is not None:
+    FFMpegWriter = manimation.writers['ffmpeg']
+    metadata = dict(title='Strain %s Worm %d', artist='Chirstoph Kirst',
+                    comment='C Elegans Dataset, Bargmann Lab')
+    writer = FFMpegWriter(fps=15, metadata=metadata);
+    writer.setup(fig, save, dpi = dpi)
+  
+  # loop over times
+  for t in times:
+    if verbose:
+      print '%d / %d' % (t, times[-1]);
+    xyt = round_xy(xy[t]);
+    
+    # update worm image and position 
+    wormt = exp.smooth_image(worm[t], sigma = sigma);
+    wormt = wormt[::-1, :];
+    wimg.set_data(wormt);
+    extent = generate_image_extent(xyt, xylim, wormt.shape, plot_range);
+    #extent = np.array(extent); extent = extent[[2,3,0,1]];
+    wimg.set_extent(extent)
+    
+    # update scatter plot data
+    if scatter is not None:
+      #plt.scatter(xy[t0:t+1,1] - ymm[0], xy[t0:t+1,0] - xmm[0], c = np.arange(nt), cmap = cmap, edgecolor = 'face')
+      xydat, t0, t1 = generate_xy(t);
+      scatter.set_offsets(np.array(xydat).T);
+      if time_data is not None:
+        cdat = xynans.copy();
+        cdat[t1:] = time_data[t0:t+1:history_delta];
+      scatter.set_array(cdat);
+        
+      for p,fd in zip(pl, feature_data):
+        p[0].set_ydata(fd[t0:t+1:history_delta]);
+        
+    if feature_indicator is not None:
+      if feature_indicator[t]:
+        feature_rect.set_color('r');
+      else:
+        feature_rect.set_color('w');
+    
+    if time_stamp:
+      time_stamp.set_text(time.strftime("%H:%M:%S", time.gmtime((t-times[0])/sample_rate)));
+    
+    fig.canvas.draw();
+    fig.canvas.flush_events()   
+    
+    if pause is not None:
+      #plt.show();
+      plt.pause(pause);
     
     if save is not None:
-      fig.savefig(save % t);
-      
+      writer.grab_frame();
+      #fig.savefig(save % t, dpi = 'figure', pad_inches = 0);
+  
+  if save is not None:
+    writer.cleanup();
+    
+
+
+
+###############################################################################
+### Gui
+###############################################################################
 
 
 import pyqtgraph as pg
+from functools import partial
 
-def image_feature_gui(strain = 'n2', wid = 0, times = all, tstart = 200000, xy = None, 
-                      features = ['speed', 'rotation', 'roam'], history = 10, history_delta = 1, 
-                      cmap = 'rainbow', linecolor = 'gray', border = 75):
+def worm_feature_gui(strain = 'n2', wid = 0, times = all, tstart = None, xy = None, roi = None,
+                     size = None, cmap = 'rainbow', linecolor = 'gray', border = 75, levels = None, background = 90, sigma = 1.0,
+                     features = ['speed', 'rotation', 'roam'], feature_filters = None, history = 10, history_delta = 1, 
+                     feature_indicator = None, stage_times = None):
 
   # load feature data
-  feature_data = [];
-  feature_label = [];
-  for f in features:
-    if isinstance(f, str):
-      feature_label.append(f);
-      feature_data.append(exp.load(strain = strain, wid = wid, dtype = f));
-    elif isinstance(f, tuple):
-      feature_label.append(f[0]);
-      feature_data.append(f[1]);
-    else:
-      feature_label.append('feature');
-      feature_data.append(f);
-  #nfeat = len(feature_data);
+  feature_label, feature_data = generate_feature_data(strain, wid, features, feature_filters);
+  feature_indicator = generate_feature_indicator(strain, wid, feature_indicator = feature_indicator);
   
   if xy is None:
     xy = exp.load(strain = strain, wid = wid, dtype = 'xy');
   
+  if stage_times is None:
+    stage_times = exp.load_stage_times(strain = strain, wid = wid)[:-1];  
+  
   if times is all:
     times = (0, len(xy));
-  t0 = times[0];
-  t1 = times[1];
+  t0 = times[0]; t1 = times[1];
   
   if tstart is None:
-    tstart = t0;
-  tstart = max(t0, tstart);
-  tstart = min(t1, tstart);
+    tstart = stage_times[0];
+  tstart = min(max(tstart, t0), t1);
 
   # memmap to images
-  fn = exp.filename(strain = strain, wid = wid, dtype = 'img');
-  img_data = np.load(fn, mmap_mode = 'r');
+  worm = exp.load_img(strain = strain, wid = wid);
   
-  #roi
-  roi = exp.load_roi(strain = strain, wid = wid);
-  xmm = [roi[0]-roi[2]-border, roi[0]+roi[2]+border];
-  ymm = [roi[1]-roi[2]-border, roi[1]+roi[2]+border];  
-  img_size = (xmm[1] - xmm[0], ymm[1] - ymm[0]);
+  # generate image data
+  wormt, xyt, roi, xylim, extent, plot_range = generate_image_data(strain = strain, wid = wid, t = tstart, size = size, 
+                                                                   xy = xy[tstart], worm = worm[tstart], roi = roi, 
+                                                                   background = background, sigma = sigma, border = border);
+  
+  img_size = wormt.shape;
   img_size2 = (img_size[0]/2, img_size[1]/2);
-  print img_size, img_size2;
+  
   
   # create the gui
   pg.mkQApp()  
@@ -187,7 +388,7 @@ def image_feature_gui(strain = 'n2', wid = 0, times = all, tstart = 200000, xy =
   layout = pg.QtGui.QVBoxLayout();
   layout.setContentsMargins(0,0,0,0)        
    
-  splitter0 =  pg.QtGui.QSplitter();
+  splitter0 = pg.QtGui.QSplitter();
   splitter0.setOrientation(pg.QtCore.Qt.Vertical)
   splitter0.setSizes([int(widget.height()*0.99), int(widget.height()*0.01)]);
   layout.addWidget(splitter0);
@@ -200,32 +401,39 @@ def image_feature_gui(strain = 'n2', wid = 0, times = all, tstart = 200000, xy =
   
   
   #  Image plot
-  gl1 = pg.GraphicsLayoutWidget(border=(50,50,50))
-
-  pimg = gl1.addPlot();
-  img = pg.ImageItem()
-  #img.translate(-, -ymm[0])
-  pimg.addItem(img)
+  img = pg.ImageView();
+  img.view.setXRange(0, plot_range[0]);
+  img.view.setYRange(0, plot_range[1]);
   
   # xy history
   x = np.zeros(history);
-  fade = np.array(np.linspace(5, 255, history+1), dtype = int)[::-1];
-  brushes = np.array([pg.QtGui.QBrush(pg.QtGui.QColor(255, i, i)) for i in fade]);
-  pxy = pg.ScatterPlotItem(x, x, size = 5, pen=pg.mkPen(None), brush = brushes[:len(x)])  # brush=pg.mkBrush(255, 255, 255, 120))
-  pimg.addItem(pxy)
+  fade = np.array(np.linspace(5, 255, history), dtype = int)[::-1];
+  #brushes = np.array([pg.QtGui.QBrush(pg.QtGui.QColor(255, i, i)) for i in fade]);
+  brushes = np.array([pg.QtGui.QBrush(pg.QtGui.QColor(255, 0, 0)) for i in fade]);
+  pxy = pg.ScatterPlotItem(x, x, size = 2, pen=pg.mkPen(None), brush = brushes)  # brush=pg.mkBrush(255, 255, 255, 120))
+  img.addItem(pxy)
   
   # circle
   k = 100;
-  x = roi[2] * np.cos(np.linspace(0, 2*np.pi, k)) + img_size2[0];  
-  y = roi[2] * np.sin(np.linspace(0, 2*np.pi, k)) + img_size2[1];
+  center = np.array(plot_range)/2.0;
+  x = roi[2] * np.cos(np.linspace(0, 2*np.pi, k)) + center[0];  
+  y = roi[2] * np.sin(np.linspace(0, 2*np.pi, k)) + center[1];
   circle = pg.PlotCurveItem(x,y, pen = pg.mkPen(pg.QtGui.QColor(0,0,0)));
-  pimg.addItem(circle);
+  img.addItem(circle);
+  
+  # feature indicator
+  if feature_indicator is not None:
+    posfac = 0.9; sizefac = 0.03;
+    indicator = pg.QtGui.QGraphicsRectItem(int(posfac * plot_range[0]), int(posfac * plot_range[1]), int(sizefac * plot_range[0])+1, int(sizefac * plot_range[1])+1);
+    indicator.setPen(pg.mkPen(None))
+    img.addItem(indicator);
   
   # Contrast/color control
   #hist = pg.HistogramLUTItem()
   #hist.setImageItem(img)
   #win.addItem(hist)
-  splitter.addWidget(gl1);
+  #splitter.addWidget(gl1);
+  splitter.addWidget(img);
   
   # Feture data plots
   gl2 = pg.GraphicsLayoutWidget(border=(50,50,50))
@@ -250,18 +458,28 @@ def image_feature_gui(strain = 'n2', wid = 0, times = all, tstart = 200000, xy =
   sb.setValue(tstart);
   layout_tools.addWidget(sb,0,1);
   
+  # add stage times
+  iitem = 1;
+  stb = [];
+  for st in stage_times:
+    b = pg.QtGui.QPushButton('L%d - %d' % (iitem, st));
+    b.setMaximumWidth(100);
+    iitem += 1;
+    layout_tools.addWidget(b,0,iitem);
+    stb.append(b);
+  
   cb = pg.QtGui.QCheckBox('>'); 
   cb.setCheckState(False);
   cb.setMaximumWidth(50);
-  layout_tools.addWidget(cb,0,2);
+  layout_tools.addWidget(cb,0,iitem+1);
   
   spin2 = pg.SpinBox(value=1, int = True, bounds=[1,1000], decimals = 3, step = 1);
   spin2.setMaximumWidth(100);
-  layout_tools.addWidget(spin2,0,3);  
+  layout_tools.addWidget(spin2,0,iitem+2);  
   
   spin3 = pg.SpinBox(value=1, int = True, bounds=[1,10000], decimals = 3, step = 1);
   spin3.setMaximumWidth(100);
-  layout_tools.addWidget(spin3,0,4);  
+  layout_tools.addWidget(spin3,0,iitem+3);  
   
   widget_tools.setLayout(layout_tools);
   splitter0.addWidget(widget_tools);
@@ -269,31 +487,46 @@ def image_feature_gui(strain = 'n2', wid = 0, times = all, tstart = 200000, xy =
   widget.setLayout(layout)
   widget.show();
   
-  
   # Callbacks for handling user interaction
-  
   def updatePlot():
     #global strain, wid, img_data, xy, roi, border, sb, feature_data, pf, img, history, history_delta
     t0 = sb.value();    
     spin.setValue(t0);
     
     # Generate image data
-    wimg = wormimage(strain = strain, wid = wid, t = t0, xy = xy[t0], roi = roi, border = border, worm = img_data[t0]); 
-    img.setImage(wimg);
+    #wimg = wormimage(strain = strain, wid = wid, t = t0, xy = xy[t0], roi = roi, border = border, worm = img_data[t0]); 
+    #img.setImage(wimg, levels = levels);
+    wimg = worm[t0].copy();
+    if background is not None:
+      wimg[wimg > background] = background;
+    
+    x0 = max(xy[t0,0] - xylim[0][0] - img_size2[0], 0);
+    y0 = max(xy[t0,1] - xylim[1][0] - img_size2[1], 0);
+    img.setImage(wimg.T, levels = levels, pos = round_xy([x0,y0]), autoRange = False)
 
-    #history    
-    ts = max(0, t0 - history * history_delta); 
-    te = t0+1;   
+    #history
+    hsteps = int(t0 / history_delta) + 1; # number of available steps in the past
+    if hsteps - history > 0:
+      ts = t0 - history_delta * (history - 1);
+    else:
+      ts = t0 - history_delta * (hsteps - 1);
+    te = t0 + 1;
     
     # update xy positions
-    x = xy[ts:te:history_delta,0] - roi[0] + img_size2[0];
-    y = xy[ts:te:history_delta,1] - roi[1] + img_size2[1];
-    pxy.setData(y,x);
-    pxy.setBrush(brushes[:len(x)]);
+    x = xy[ts:te:history_delta,0] - roi[0] + center[0];
+    y = xy[ts:te:history_delta,1] - roi[1] + center[1];
+    pxy.setData(x,y);
+    pxy.setBrush(brushes[-len(x):]);
 
     # feature traces
     for fd, pl in zip(feature_data, pf):
       pl.plot(fd[ts:te:history_delta],clear=True);
+    
+    if feature_indicator is not None:
+      if feature_indicator[t0]:
+        indicator.setBrush(pg.mkBrush('r'))
+      else:
+        indicator.setBrush(pg.mkBrush('w'))
       
   def updateScaleBar():
     t0 = int(spin.val);
@@ -321,12 +554,19 @@ def image_feature_gui(strain = 'n2', wid = 0, times = all, tstart = 200000, xy =
   def updateTimer():
     timer.setInterval(int(spin2.val));
   
+  def updateStage(i):
+    spin.setValue(stage_times[i]);
+    updatePlot();
+  
   
   sb.valueChanged.connect(updatePlot);
   spin.sigValueChanged.connect(updateScaleBar);
   
   cb.stateChanged.connect(toggleTimer);
   spin2.sigValueChanged.connect(updateTimer)
+  
+  for i,s in enumerate(stb):
+    s.clicked.connect(partial(updateStage, i));
   
   updatePlot();
   
@@ -337,88 +577,5 @@ def image_feature_gui(strain = 'n2', wid = 0, times = all, tstart = 200000, xy =
 ## Start Qt event loop unless running in interactive mode or using pyside.
 
 if __name__ == '__main__':
-  
-  import numpy as np
-  import os
-  import analysis.experiment as exp
-  import analysis.plot as fplt
-  import matplotlib.pyplot as plt  
-  
-  import analysis.video as vd
-  reload(vd)
-  
-  w =vd.image_feature_gui(strain = 'n2', wid = 0, history = 100)
-
-  strain = 'n2'; wid = 0;
-  
-  trans = np.load(os.path.join(exp.data_directory, 'transitions_times.npy'))
-  trans = trans[wid];
-  t0 = trans[0];
-
-  reload(vd)
-
-  
-  speed = exp.load(strain = strain, wid = wid, dtype = 'speed')
-  plt.figure(6); plt.clf();
-  plt.plot(speed)
-  plt.ylim(0,20)
-  
-  t0= 350600
-  vid = [vd.wormimage(t = t0+ti) for ti in range(0,1000,5)]
-  vid = np.array(vid)
-
-  fplt.pg.image(vid)  
-  plt.figure(7); plt.clf();
-  plt.imshow(vid[0], cmap = plt.cm.gray)
-  
-  t0= 350600
-  img = vd.wormimage(t = t0, strain = strain, wid = wid, border = 75)
-  plt.figure(7); plt.clf(); 
-  plt.subplot(1,2,1)
-  plt.imshow(img, cmap = plt.cm.gray)
-  sh = img.shape;
-  plt.gca().add_artist(plt.Circle((sh[0]/2,sh[1]/2),sh[0]/2-75, color = 'black',fill = False, linewidth = 1))
-
-  reload(vd)
-  plt.figure(10); plt.clf();
-  vd.compose_frames(strain = strain, wid = wid, xy = all, speed = all, rotation = all, roam = all, times = range(t0, t0+500, 5),
-                    history= 50, history_delta=5)
-  
-  
-  file_format = 'movie_%d.png';
-  plt.figure(11);
-  t0 = 350600;
-  vd.compose_frames(strain = strain, wid = wid, xy = all, speed = all, rotation = all, roam = all, times = range(t0, t0+5000, 1),
-                    history= 150, history_delta=1, save = file_format);
-
-
-
-    
-  os.system("mencoder 'mf://movie_*.png' -mf type=png:fps=30 -ovc lavc -lavcopts vcodec=mpeg4 -oac copy -o animation.mpg")
-  
-  import glob
-  files = np.sort(np.unique(glob.glob('movie_*.png')))
-  for f in files:
-    os.remove(f)
-
-
-  #os.system("convert _tmp*.png animation.mng")
-
-  # cleanup
-  #for fname in files:
-  #  os.remove(fname)
-
-
-
-#  import matplotlib
-#  matplotlib.use("Agg")
-#  import matplotlib.animation as manimation
-#
-#  FFMpegWriter = manimation.writers['ffmpeg']
-#  metadata = dict(title='Worm %d t0 = %d' % (wid, t0), artist='Christoph Kirst', comment='CElegans Behaviour Project')
-#  writer = FFMpegWriter(fps=15, metadata=metadata)
-#
-#  fig = plt.figure(11);
-#  writer.saving(fig, "writer_test.mp4", 100);
-#  vd.compose_frames(strain = strain, wid = wid, xy = all, speed = all, rotation = all, roam = all, times = range(t0, t0+500, 5),
-#                    history= 50, history_delta=5, writer= writer)
+  pass
+ 

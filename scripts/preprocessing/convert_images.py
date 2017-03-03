@@ -185,3 +185,50 @@ for i,d in enumerate(dir_names):
     #print fns_dest;
 
 
+
+### check image size at certain time
+
+import glob
+import scipy.io
+
+import analysis.experiment as exp
+
+
+import scripts.preprocessing.file_order as fo;
+exp_names = fo.experiment_names;
+dir_names = fo.directory_names;
+
+nworms = len(exp_names)
+
+
+wid = 0;
+img_id = 600499;
+
+wxy = exp.load(wid = wid);
+n = wxy.shape[0];
+
+file_data = np.sort(np.unique(np.array(glob.glob(os.path.join(dir_names[wid], 'short*.mat')))));
+nf = len(file_data);
+
+si = 0;
+sf = 0;
+dat = scipy.io.loadmat(file_data[sf])['mydata'][0];
+
+for i in range(n):
+  print 'wid: %d  step: %d/%d fid:%d,%d' % (wid, i, n, sf, si)
+  
+  if i == img_id:
+    img = dat[si];
+    break;
+  
+  si += 1;
+  if si == dat.shape[0]:
+    sf += 1;
+    if sf < nf:
+      dat = scipy.io.loadmat(file_data[sf])['mydata'][0];
+      si = 0;
+    else:
+      break;
+
+
+

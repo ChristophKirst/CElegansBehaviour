@@ -11,6 +11,28 @@ __docformat__ = 'rest'
 import numpy as np;
 
 
+### Averages
+
+def binned_average(x, bin_size = 10):
+  """Binned Average"""
+  n = len(x);
+  r = n % bin_size;
+  if r != 0:
+    xp = np.pad(x, (0, bin_size - r), mode = 'constant', constant_values = np.nan);
+  else:
+    xp = x;
+  #print xp.shape
+  s = len(xp) / bin_size;
+  xp.shape = (s,bin_size);
+  return np.nanmean(xp, axis = 1);
+  
+def moving_average(x, bin_size = 10):
+  """Moving Average"""
+  kern = np.ones(int(bin_size))/float(bin_size);
+  return np.convolve(x, kern, 'same')
+
+### Motions
+
 def speed(xy, delta = 3, dt = 1.0):
   """Speed of the worm"""
   return np.linalg.norm(xy[delta:]-xy[:-delta], axis = 1) / dt;
@@ -79,6 +101,10 @@ def max_distance(xy, steps = 10000, steps_forward = all, steps_backward = all):
     md = np.max(d);
  
   return md;
+
+
+
+
 
 
 #def roam_dwelling()
