@@ -16,7 +16,6 @@ import matplotlib.patches as patches;
 
 import analysis.experiment as exp;
 
-
 import matplotlib.animation as manimation
 
 
@@ -155,6 +154,25 @@ def generate_feature_indicator(strain = 'n2', wid = 0, feature_indicator = None)
     feature_indicator = np.array(feature_indicator, dtype = bool);
   return feature_indicator;
 
+def generate_time_str(sec):
+  m, s = divmod(sec, 60);
+  h, m = divmod(m,   60);
+  return '%s:%02d:%02d' % (str(h).rjust(3), m, s)
+
+def generate_stage_str(stage):
+  if stage <= 4:
+    return 'L%d' % stage;
+  else:
+    return 'A';
+    
+    
+def arange_plots(n, prefer_rows = True):
+  r = int(np.sqrt(n));
+  c = int(np.ceil(n * 1.0 / r));
+  if prefer_rows:
+    return r,c
+  else:
+    return c,r
 
 def animate_frames(strain = 'n2', wid = 0,  
                 size = None, xy = None, roi = None, 
@@ -163,12 +181,11 @@ def animate_frames(strain = 'n2', wid = 0,
                 features = ['speed', 'rotation'], feature_filters = None, history = 10, history_delta = 1, linecolor = 'gray', 
                 feature_indicator = 'roam',
                 time_data = None, time_cmap = plt.cm.rainbow, time_size = 30,
-                time_stamp = True, sample_rate = 3,
-                pause = 0.01, 
+                time_stamp = True, sample_rate = 3, tref = None, stage_stamp = True, font_size = 16,
+                pause = 0.01, legend = None,
                 save = None, fps = 20, dpi = 300,
                 verbose = True):
-  """Animate frames and generate video"""
-           
+  """Animate frames and generate video"""         
   if times is all:
     t = 0;
   else:
@@ -205,6 +222,11 @@ def animate_frames(strain = 'n2', wid = 0,
   ax.set_xticks([])
   ax.set_yticks([])
   ax.set_axis_off();
+  
+  if legend is not None:
+    for li,l in enumerate(legend):
+      font = {'size': font_size }
+      plt.text(10, plot_range[1]-100 + li * 50, l[1], color = l[0], fontdict = font)
   
   # draw plate outline
   center = np.array(np.array(plot_range) /2, dtype = int);
@@ -244,6 +266,7 @@ def animate_frames(strain = 'n2', wid = 0,
       vmin = np.nanmin(time_data);
       vmax = np.nanmax(time_data);
     
+    print time_cmap.name
     scatter = plt.scatter(xydat[0], xydat[1], c = cdat, cmap = time_cmap, edgecolor = 'none', vmin = vmin, vmax = vmax, s = time_size)  ;
     
     # feature plots
@@ -269,18 +292,31 @@ def animate_frames(strain = 'n2', wid = 0,
     posfac = 0.95; sizefac = 0.03;
     feature_rect = patches.Rectangle((posfac * plot_range[0], posfac * plot_range[1]),  sizefac * plot_range[0], sizefac * plot_range[1], edgecolor = None, facecolor = fc);
     ax.add_patch(feature_rect);
-    
-  if time_stamp:
-    font = {'size': 6 }
-    tt = time.strftime("%H:%M:%S", time.gmtime(0))
-    time_stamp = plt.text(10, 10, tt, fontdict = font)
   
+  # time stamp text  
+  if time_stamp:
+    font = {'size': font_size }
+    tt = generate_time_str(0);
+    time_stamp = plt.text(10, 10, tt, fontdict = font)
+    if tref is None:
+      tref = times[0];
+    
+  # stage stamp text
+  if stage_stamp:
+    stage_times = exp.load_stage_times(strain = strain, wid = wid);
+    font = {'size': font_size }
+    tt = generate_stage_str(1);
+    stage_stamp = plt.text(plot_range[0] - 10, 10, tt, fontdict = font, horizontalalignment='right',)
+  
+  # movie saver
   if save is not None:
     FFMpegWriter = manimation.writers['ffmpeg']
     metadata = dict(title='Strain %s Worm %d', artist='Chirstoph Kirst',
                     comment='C Elegans Dataset, Bargmann Lab')
     writer = FFMpegWriter(fps=15, metadata=metadata);
     writer.setup(fig, save, dpi = dpi)
+    
+  
   
   # loop over times
   for t in times:
@@ -316,7 +352,10 @@ def animate_frames(strain = 'n2', wid = 0,
         feature_rect.set_color('w');
     
     if time_stamp:
-      time_stamp.set_text(time.strftime("%H:%M:%S", time.gmtime((t-times[0])/sample_rate)));
+      time_stamp.set_text(generate_time_str((t-tref)/sample_rate));
+    
+    if stage_stamp:
+      stage_stamp.set_text(generate_stage_str(np.sum(t >= stage_times)));
     
     fig.canvas.draw();
     fig.canvas.flush_events()   
@@ -333,6 +372,225 @@ def animate_frames(strain = 'n2', wid = 0,
     writer.cleanup();
     
 
+
+
+
+
+def animate_worms(strain = 'n2', wid = 0, times = all,  
+                size = None, xy = None, roi = None, 
+                background = None, sigma = 1.0, border = 75, vmin = 60, vmax = 90, cmap = plt.cm.gray,
+                time_data = None, time_cmap = plt.cm.rainbow, time_size = 30, history = 10, history_delta = 1, 
+                time_stamp = True, stage_stamp = True, sample_rate = 3, font_size = 16,
+                pause = 0.01, save = None, fps = 20, dpi = 300,
+                verbose = True):
+  """Animate multiple worms and generate video"""
+  
+  # worms to plot
+  wid = np.array([wid]).flatten();  
+  nworms = len(wid);
+  nrows,ncols = arange_plots(nworms)#
+
+  # draw worms       
+  xynans = np.nan * np.ones(history);
+  
+  # memmap to images
+  worms = [exp.load_img(strain = strain, wid = w) for w in wid];
+  #print worms  
+  
+  # xy positions
+  if xy is None:
+    xys = [exp.load(strain = strain, wid = w, dtype = 'xy') for w in wid];
+  else:
+    xys = np.array(xy);
+  #print xys
+
+  if times is all:
+    tm = np.min([len(x) for x in xys]);
+    times = np.array([[0, tm] for w in wid]);
+  elif isinstance(times, np.ndarray) and times.ndim == 1:
+    times = np.array([times for w in wid]);
+  else:
+    times = np.array(times);
+  t0s = times[:,0];
+  #print t0s
+  
+  if isinstance(time_data, basestring):
+    time_data = [exp.load(strain = strain, wid = w, dtype = time_data) for w in wid];
+  elif time_data is None:
+    time_data = [None for w in wid];
+  #print time_data
+  
+  #if time_stamp is True:
+  #  time_stamp = [None for w in wid];
+  #  time_stamp[0] = True;
+  
+  # initialize image data
+  worm0s = []; xy0s = []; xylims = []; rois = []; extents = []; plot_ranges = [];
+  for w,t,x,ws in zip(wid, t0s, xys, worms):
+    wormt, xyt, roiw, xylim, extent, plot_range = generate_image_data(strain = strain, wid = w, t = t, size = size, 
+                                                                     xy = x[t], worm = ws[t], roi = roi, 
+                                                                     background = background, sigma = sigma, border = border);
+    worm0s.append(wormt); xy0s.append(xyt); xylims.append(xylim); rois.append(roiw); extents.append(extent); plot_ranges.append(plot_range);
+  
+  # helper to create xy data
+  def generate_xy(wi, t):
+    hsteps = int(t / history_delta) + 1; # number of available steps in the past
+    if hsteps - history > 0:
+      t0 = t - history_delta * (history - 1);
+      t1 = 0;
+    else:
+      t0 = t - history_delta * (hsteps - 1);
+      t1 = -hsteps;
+          
+    xdat = xynans.copy();
+    ydat = xynans.copy();
+    xdat[t1:] = xys[wi][t0:t+1:history_delta,0] - xylims[wi][0][0]
+    ydat[t1:] = xys[wi][t0:t+1:history_delta,1] - xylims[wi][1][0]
+    return [xdat, ydat], t0, t1;  
+  
+  # create figure
+  fig = plt.gcf(); plt.clf();
+  axs = [];
+  wimgs = []; scatters = []; time_stamps = []; stage_times = []; stage_stamps = [];
+  for wi, w in enumerate(wid):
+    ax = plt.subplot(nrows,ncols,wi+1);
+    axs.append(ax);
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_axis_off();
+    #ax.set_title('%d' % w, fontsize = font_size);
+  
+    # draw plate outline
+    center = np.array(np.array(plot_ranges[wi]) /2, dtype = int);
+    r = center[0] - border;
+    ax.add_artist(plt.Circle((center[0], center[1]), r, color = 'black', fill = False, linewidth = 0.5))
+    ax.set_xlim(0, plot_ranges[wi][0]);
+    ax.set_ylim(0, plot_ranges[wi][1]);
+  
+    # place worm image
+    wimgs.append(ax.imshow(worm0s[wi], extent = extents[wi], vmin = vmin, vmax = vmax, cmap = cmap));
+    #print wimgs    
+    
+    if history > 0:
+      xydat, t0, t1 = generate_xy(wi, t);
+      if time_data[wi] is None:
+        cdat = np.linspace(0,1,history);
+        vmin = 0;
+        vmax = 1;
+      else:
+        cdat = xynans.copy();
+        cdat[t1:] = time_data[wi][t0:t+1:history_delta];
+        vmin = np.nanmin(time_data[wi]);
+        vmax = np.nanmax(time_data[wi]);
+      
+      scatters.append(plt.scatter(xydat[0], xydat[1], c = cdat, cmap = time_cmap, edgecolor = 'none', vmin = vmin, vmax = vmax, s = time_size));
+    else:
+      scatters.append(None);
+    #print scatters
+  
+    # plot feature indicator
+    #feature_indicator = generate_feature_indicator(strain, wid, feature_indicator);
+    #if feature_indicator is not None:
+    #if feature_indicator[t]:
+    #  fc = 'r';
+    #else:
+    #  fc = 'w';
+    #posfac = 0.95; sizefac = 0.03;
+    #feature_rect = patches.Rectangle((posfac * plot_range[0], posfac * plot_range[1]),  sizefac * plot_range[0], sizefac * plot_range[1], edgecolor = None, facecolor = fc);
+    #ax.add_patch(feature_rect);
+  
+    # time stamp text
+
+    #if time_stamp[wi] is not None:
+    #  font = {'size': font_size }
+    #  tt = generate_time_str(0);
+    #  time_stamps.append(plt.text(10, 10, tt, fontdict = font));
+    
+    # stage stamp text
+    if stage_stamp:
+      stage_times.append(exp.load_stage_times(strain = strain, wid = w));
+      font = {'size': font_size, 'weight' : 'bold' }
+      tt = generate_stage_str(1);
+      stage_stamps.append(plt.text(plot_range[0] - 10, 10, tt, fontdict = font, horizontalalignment='right'));
+      # stage_colors = plt.cm.Paired(np.linspace(0,1,12))[::2]
+      #stage_colors = plt.cm.nipy_spectral(np.linspace(0,1,12))[[10,8,5,2,1,0]]
+      stage_colors = plt.cm.nipy_spectral(np.linspace(0,1,20))[[18, 18, 15, 9,3,1,0]];
+  
+  if time_stamp:
+    font = {'size': font_size + 1 }
+    tt = 'N2 %s' % generate_time_str(0);
+    time_stamp = fig.suptitle(tt, fontdict = font);
+  
+  # movie saver
+  if save is not None:
+    FFMpegWriter = manimation.writers['ffmpeg']
+    metadata = dict(title='Strain %s Worm %d', artist='Chirstoph Kirst',
+                    comment='C Elegans Dataset, Bargmann Lab')
+    writer = FFMpegWriter(fps=15, metadata=metadata);
+    writer.setup(fig, save, dpi = dpi)
+  
+  # loop over times
+  times_len = [len(ts) for ts in times];
+  nsteps = np.min(times_len);
+  #print plot_ranges
+  #print xylims
+  #print xys
+  for s in range(nsteps):
+    for wi,w in enumerate(wid):
+      t = times[wi][s];
+      if verbose:
+        print '%d / %d' % (t, times[wi][-1]);        
+      
+      xyt = round_xy(xys[wi][t]);
+      #print xyt
+    
+      # update worm image and position 
+      wormt = exp.smooth_image(worms[wi][t], sigma = sigma);
+      wormt = wormt[::-1, :];
+      if wormt.min() == 0:
+        wormt[:,:] = vmax;
+      wimgs[wi].set_data(wormt);
+      extent = generate_image_extent(xyt, xylims[wi], wormt.shape, plot_ranges[wi]);
+      #print wi, xylims[wi], plot_ranges[wi]
+      #print extent;
+      wimgs[wi].set_extent(extent)
+    
+      # update scatter plot data
+      if scatters[wi] is not None:
+        #plt.scatter(xy[t0:t+1,1] - ymm[0], xy[t0:t+1,0] - xmm[0], c = np.arange(nt), cmap = cmap, edgecolor = 'face')
+        xydat, t0, t1 = generate_xy(wi,t);
+        scatters[wi].set_offsets(np.array(xydat).T);
+        if time_data[wi] is not None:
+          cdat = xynans.copy();
+          cdat[t1:] = time_data[wi][t0:t+1:history_delta];
+        scatters[wi].set_array(cdat);
+        #print scatters[wi];
+      
+      #if time_stamp[wi]:
+      #  time_stamps[wi].set_text(generate_time_str((t-times[wi][0])/sample_rate));
+    
+      if stage_stamps[wi]:
+        stage = np.sum(t >= stage_times[wi]);
+        stage_stamps[wi].set_text(generate_stage_str(stage));
+        stage_stamps[wi].set_color(stage_colors[stage]);
+    
+    if time_stamp:
+      time_stamp.set_text('N2 %s' % generate_time_str((t-times[wi][0])/sample_rate));    
+    
+    fig.canvas.draw();
+    fig.canvas.flush_events()   
+    
+    if pause is not None:
+      #plt.show();
+      plt.pause(pause);
+    
+    if save is not None:
+      writer.grab_frame();
+      #fig.savefig(save % t, dpi = 'figure', pad_inches = 0);
+  
+  if save is not None:
+    writer.cleanup();
+    
 
 
 ###############################################################################

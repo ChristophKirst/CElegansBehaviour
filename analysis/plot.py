@@ -223,7 +223,7 @@ def plot_distributions(data, cmap = plt.cm.Spectral_r, percentiles =  [5, 25, 50
 import scipy.cluster.hierarchy as sch
 
 def plot_hierarchical_cluster(distances, clustering = None, linkage_kwargs = {'method' : 'single'}, dendogram_kwargs = { 'link_color_func' : lambda x: 'k'},
-                              padding = [0.01, 0.01], dendogram_size = [0.2, 0.2], cmap = plt.cm.viridis, label = None, colorbar_width = 0.075, stride_line_kwargs = {'c' :'k'}):
+                              padding = [0.01, 0.01], dendogram_size = [0.2, 0.2], cmap = plt.cm.Reds, label = None, colorbar_width = 0.075, stride_line_kwargs = {'c' :'k'}):
   """Plot a correlation matrix with hierachical clustering"""
   
   ds = dendogram_size;
@@ -439,7 +439,7 @@ def plot_embedding(Y, subplot = None, title  = None, color = None, cmap = plt.cm
  
 import scipy.stats as st
  
-def plot_embedding_contours(Y, contours = 10, cmap = plt.cm.plasma, xmin = None, xmax = None, ymin = None, ymax = None, npts = 100, density = False):
+def plot_embedding_contours(Y, contours = 10, cmap = 'plasma', xmin = None, xmax = None, ymin = None, ymax = None, npts = 100, density = False):
   """Plot a 2d density map of the embedding Y"""
     
   if xmin is None:

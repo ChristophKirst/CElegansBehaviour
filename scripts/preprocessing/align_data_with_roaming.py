@@ -30,7 +30,7 @@ import analysis.plot as fplt
 reload(exp)
 print 'working at %s' % exp.base_directory
 
-### Load data sets and compare speed
+#%% Load data sets and compare speed
 
 nworms = len(fo.experiment_names);
 
