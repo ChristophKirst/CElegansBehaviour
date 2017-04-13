@@ -7,7 +7,7 @@ Long Term Behaviour Analysis of C-elegans
 Aligning the roaming dwelling data set with the image data set
 """
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
-__author__ = 'Christoph Kirst <ckirst@rockefeller.edu>'
+__author__  = 'Christoph Kirst <ckirst@rockefeller.edu>'
 __docformat__ = 'rest'
 
 import numpy as np;

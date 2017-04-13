@@ -24,7 +24,7 @@ import scipy.ndimage.filters as filters
 ### File locations
 ############################################################################      
 
-base_directory = '/home/ckirst/Science/Projects/CElegansBehaviour/';
+base_directory = '/home/ckirst/Science/Projects/CElegans/';
 """Base Directory"""
 
 #chekc for mounted data
@@ -37,6 +37,10 @@ data_directory = os.path.join(base_directory, 'Experiment/Data');
 
 raw_data_directory = os.path.join(base_directory, 'Experiment/RawData');
 """Experiment directory with the raw data"""
+
+if os.path.ismount('/run/media/ckirst/My Book/'): # N2 data set
+  raw_data_directory = '/run/media/ckirst/My Book/';
+
 
 analysis_directory = os.path.join(base_directory, 'Analysis/WormBehaviour/Data')
 """Analysis directory for result data"""
@@ -123,6 +127,7 @@ def smooth_image(img, sigma = 1.0):
     return filters.gaussian_filter(np.asarray(img, float), sigma);
   else:
     return img;
+
 
 def load_img(strain = 'n2', wid = 0, t = all, sigma = None):
   """Loads cropped worm images"""

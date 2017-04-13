@@ -16,10 +16,10 @@ import numpy as np;
 import matplotlib.pyplot as plt
 
 import analysis.experiment as exp;
-import scripts.preprocessing.file_order as fo;
+import scripts.preprocessing.filenames as fo;
 
-dir_behaviour = '/home/ckirst/Science/Projects/CElegansBehaviour/Analysis/WormBehaviour/Code';
-dir_roaming   = '/home/ckirst/Science/Projects/CElegansBehaviour/Analysis/Roaming/Code'
+dir_behaviour = '/home/ckirst/Science/Projects/CElegans/Analysis/WormBehaviour/Code';
+dir_roaming   = '/home/ckirst/Science/Projects/CElegans/Analysis/Roaming/Code'
 
 os.chdir(dir_roaming);
 import experiment as dexp;
@@ -32,9 +32,17 @@ print 'working at %s' % exp.base_directory
 
 #%% Load data sets and compare speed
 
-nworms = len(fo.experiment_names);
+import scripts.preprocessing.filenames as f;
+strain = 'daf7'
+nworms, exp_names, dir_names = f.filenames(strain = strain);
 
-rd_data = dexp.load_data(strain = 'N2');
+
+#%%
+
+straind = 'daf-7'
+strain = 'daf7';
+
+rd_data = dexp.load_data(strain = straind);
 rd_speed = rd_data.speed;
 rd_speed_th = rd_speed.copy();
 th = np.nanpercentile(rd_speed, 95);
@@ -45,7 +53,7 @@ fplt.plot_array(rd_speed_th)
 
 v = [];
 for wid in range(nworms):
-  v.append(exp.load(strain = 'n2', dtype = 'speed', wid = wid, memmap = None));
+  v.append(exp.load(strain = strain, dtype = 'speed', wid = wid, memmap = None));
 ntimes = max([len(vv) for vv in v])
 
 

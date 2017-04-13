@@ -17,26 +17,26 @@ import numpy as np
 
 import analysis.experiment as exp
 
-import scripts.preprocessing.file_order as fo;
-exp_names = fo.experiment_names;
-dir_names = fo.directory_names;
 
-nworms = len(exp_names)
+#%% N2 population
 
-# wid = 90 , fid = 61, '/run/media/ckirst/CElegans_N2/CElegansBehaviour/Experiment/RawData/Results290416exp/CAM814A3/shortCAM814A3CAM814_2016-04-29-171847-0061.mat'
-# is corrupt!
+import scripts.preprocessing.filenames as f;
+strain = 'n2' # 'tph1', 'npr1'
+strain = 'daf7'
+nworms, exp_names, dir_names = f.filenames(strain = strain);
 
 
-## Convert Worm Images
+#%% Convert Worm Images
 
-for wid in range(91, nworms):
+
+for wid in range(0,nworms):
   #file_data = os.path.join(dir_names[wid], 'short%s-%s.mat' % ('%04d'));
   file_data = np.sort(np.unique(np.array(glob.glob(os.path.join(dir_names[wid], 'short*.mat')))));
   nf = len(file_data);
   
-  file_save = os.path.join(exp.data_directory, 'Images/n2_img_w=%d_s=all.npy' % wid);
+  file_save = os.path.join(exp.data_directory, 'Images/%s_img_w=%d_s=all.npy' % (strain, wid));
   
-  wxy = exp.load(wid = wid);
+  wxy = exp.load(strain = strain, wid = wid);
   n = wxy.shape[0];
   
   si = 0;
@@ -76,10 +76,7 @@ for wid in range(91, nworms):
   np.save(file_save, imgs)
 
 
-
-
-
-
+#%%
 
 plt.figure(1); plt.clf();
 for i in range(3):

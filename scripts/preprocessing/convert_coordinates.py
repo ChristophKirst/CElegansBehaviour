@@ -18,18 +18,20 @@ import numpy as np
 
 import analysis.experiment as exp
 
-import scripts.preprocessing.file_order as fo
 
-data_directories = fo.directory_names;
-print '%d data directories!' % len(data_directories)
+#%% Strain
 
-nworms = len(data_directories);
+import scripts.preprocessing.filenames as f;
+strain = 'n2' # 'tph1', 'npr1'
+strain = 'tph1'
+strain = 'npr1'
+strain = 'daf7'
+nworms, exp_names, dir_names = f.filenames(strain = strain);
 
-#exp.experiment_directory = '/home/ckirst/Science/Projects/CElegansBehaviour/Experiment/Data'
 
-### Convert Coordinates
+#%% Convert Coordinates
 
-for wid, wdir in enumerate(data_directories):
+for wid, wdir in enumerate(dir_names):
   print 'processing worm %d/%d' % (wid, nworms);
   
   file_pattern = os.path.join(wdir, 'corrd*.mat');
@@ -49,30 +51,28 @@ for wid, wdir in enumerate(data_directories):
   xy[inv,:] = np.nan;
   
   print 'worm %d: len = %d' % (wid, xy.shape[0])
-  fn_out = exp.filename(strain = 'n2', wid  = wid);
+  fn_out = exp.filename(strain = strain, wid  = wid);
   np.save(fn_out, xy);
 
 
-### Precalculate Speed
+#%% Precalculate Speed
 
-import scripts.preprocessing.features as feat;
+import analysis.features as feat;
 
-nworms = len(fo.experiment_names);
 delta = 3;
 
-exp.experiment_directory = '/home/ckirst/Science/Projects/CElegansBehaviour/Experiment/ImageData'
 
 for wid in range(nworms):
   print 'processing worm %d/%d' % (wid, nworms);
   
-  xy = exp.load(strain = 'n2', wid = wid, memmap = None);
+  xy = exp.load(strain = strain, wid = wid, memmap = None);
 
   v = feat.speed(xy, delta = delta);
-  fn_out = exp.filename(strain = 'n2', wid  = wid, dtype = 'speed');
+  fn_out = exp.filename(strain = strain, wid  = wid, dtype = 'speed');
   np.save(fn_out, v);
   
   r = feat.rotation(xy, delta = delta);
-  fn_out = exp.filename(strain = 'n2', wid  = wid, dtype = 'rotation');
+  fn_out = exp.filename(strain = strain, wid  = wid, dtype = 'rotation');
   np.save(fn_out, r);
 
 

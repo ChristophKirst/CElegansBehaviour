@@ -10,9 +10,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import copy
 
-dir_roaming    = '/home/ckirst/Science/Projects/CElegansBehaviour/Analysis/Roaming/Code'
-dir_behaviour  = '/home/ckirst/Science/Projects/CElegansBehaviour/Analysis/WormBehaviour/Code/'
+dir_roaming    = '/home/ckirst/Science/Projects/CElegans/Analysis/Roaming/Code'
+dir_behaviour  = '/home/ckirst/Science/Projects/CElegans/Analysis/WormBehaviour/Code/'
 
+
+#%%
 
 os.chdir(dir_roaming);
 import experiment as rexp
@@ -20,10 +22,11 @@ import experiment as rexp
 os.chdir(dir_behaviour);
 import analysis.experiment as exp
 
-fig_directory = '/home/ckirst/Science/Projects/CElegansBehaviour/Analysis/WormBehaviour/Figures/2017_02_13_StageDetection/'
+fig_directory = '/home/ckirst/Science/Projects/CElegans/Analysis/WormBehaviour/Figures/StageDetection/'
 
-import scripts.preprocessing.file_order as fo
-nworms = fo.nworms
+import scripts.preprocessing.filenames as fn
+strain = 'daf7'
+nworms, exp_names, dir_names = fn.filenames(strain);
 
 import analysis.plot as fplt;
 
@@ -41,7 +44,7 @@ def average(x, nbins):
   return x_mean;
 
 
-### Parameter  
+#%% Parameter  
 rate = 3; # Hz sample rate
 time_bin = 5*60; # [sec] for averaging 
 
@@ -53,7 +56,7 @@ nbins = rate * time_bin; # number of time bins to calculate mean
 r_all_0 = [];
 nmax = 0;
 for wid in range(nworms):
-  r = exp.load(strain = 'n2', wid = wid, dtype = 'rotation')
+  r = exp.load(strain = strain, wid = wid, dtype = 'rotation')
   r_mean = average(r, nbins);
   r_all_0.append(r_mean);
   nmax = max(nmax, len(r_mean));
@@ -66,7 +69,7 @@ for wid in range(nworms):
 v_all_0 = [];
 nmax = 0;
 for wid in range(nworms):
-  v = exp.load(strain = 'n2', wid = wid, dtype = 'speed')
+  v = exp.load(strain = strain, wid = wid, dtype = 'speed')
   v_mean = average(v, nbins);
   v_all_0.append(v_mean);
   nmax = max(nmax, len(v_mean));
@@ -79,32 +82,38 @@ for wid in range(nworms):
 
 lv = 0; lr = 0;
 for wid in range(nworms):
-  xy = exp.load(strain = 'n2', dtype = 'speed', wid = wid);
+  xy = exp.load(strain = strain, dtype = 'speed', wid = wid);
   lv = max(lv, xy.shape[0]);
-  r = exp.load(strain = 'n2', dtype = 'rotation', wid = wid);
+  r = exp.load(strain = strain, dtype = 'rotation', wid = wid);
   lr = max(lr, r.shape[0]);
 
 v_full = np.zeros((nworms, lv));
 r_full = np.zeros((nworms, lr));
 for wid in range(nworms):
-  v = exp.load(strain = 'n2', dtype = 'speed', wid = wid, memmap = None);
+  v = exp.load(strain = strain, dtype = 'speed', wid = wid, memmap = None);
   nv = len(v);
   v_full[wid,:nv] = v;
   
-  r = exp.load(strain = 'n2', dtype = 'rotation', wid = wid, memmap = None);
+  r = exp.load(strain = strain, dtype = 'rotation', wid = wid, memmap = None);
   nr = r.shape[0];
   r_full[wid,:nr] = r;
 
 
+#%%
+r_plt = r_all.copy();
+r_plt[np.isnan(r_plt)] = 0.0;
 
-### Determine Lethargus phases
+fplt.plot_array(r_plt)
+
+
+#%% Determine Lethargus phases
 
 l_pks_0 = [];
 k = 0;
-verbose = False;
+verbose = True;
 
 for wid in range(nworms):
-  r = exp.load(strain = 'n2', wid = wid, dtype = 'rotation')
+  r = exp.load(strain = strain, wid = wid, dtype = 'rotation')
   r_mean = average(r, nbins);
   
   # smooth roaming curve
@@ -126,18 +135,20 @@ for wid in range(nworms):
     plt.plot(r_mean, '.')  
     plt.plot(rf, 'k')
     plt.title('worm %d' % wid);
-    plt.scatter(pks[:,0], pks[:,1], s = 60, c = 'r')
+    if len(pks) > 0:
+      plt.scatter(pks[:,0], pks[:,1], s = 60, c = 'r')
   
 
 
-### Remove and add peaks manually
+#%% Remove and add peaks manually
 
 
 l_pks = copy.copy(l_pks_0)
 
-pks_rmv = {11 : [2],  19: [0], 25 : [3], 43: [6,7,8], 75 : [1], 116 : [3]}
-pks_add = {14: [252], 18 : [161], 19 : [198],  67 : [296], 74 : [4], 75 : [272], 80: [480], 85 : [172], 91: [338], 108 : [374], 113 : [479], 114 : [294], 116 : [470],
-           }
+pks_rmv = {6 : [3], 7 : [5]}
+          
+pks_add = {3 : [482], 6: [633], 9 : [208], 12 : [242]}
+
 
 for k,v in pks_rmv.iteritems():
   l_pks[k]  = np.delete(l_pks[k], v, axis = 0);
@@ -151,7 +162,7 @@ for i in range(len(l_pks)):
   t = l_pks[i][:,0];
   l_pks[i] = l_pks[i][np.argsort(t),:];
   
-  l_pks[i] = l_pks[i][np.sort(t) <= 620,:];
+  #l_pks[i] = l_pks[i][np.sort(t) <= 620,:];
   
   if len(l_pks[i]) > 4:
     l_pks[i] = l_pks[i][-4:,:];
@@ -161,7 +172,7 @@ for i in range(len(l_pks)):
 if verbose: 
   k = 0;
   for wid in range(nworms):    
-    r = exp.load(strain = 'n2', wid = wid, dtype = 'rotation')
+    r = exp.load(strain = strain, wid = wid, dtype = 'rotation')
     r_mean = average(r, nbins);
   
     # smooth roaming curve
@@ -192,11 +203,11 @@ for wid in range(nworms):
 lethargus = np.abs(np.array(lethargus))
 
 
-### Hatching 
+#%% Hatching 
 
 hatching = np.array([np.nonzero(r_all[wid, :] > 0.5)[0][0] for wid in range(nworms)])
   
-# jump a to next onset
+# jump to next onset
 for wid in range(nworms):
   gap = np.nonzero(np.isnan(r_all[wid][hatching[wid]:]))[0];
   #gap = np.nonzero(roam_24hr[wid][hatching[wid]:] == 0.0)[0];  
@@ -210,7 +221,7 @@ for wid in range(nworms):
 
 final = np.array([np.nonzero(r_all[wid, :] > 0.0)[0][-1] for wid in range(nworms)])
 
-### Hatching Velocity Onset
+#%% Hatching Velocity Onset
 
 v_all_plt = v_all.copy();
 v_th = np.nanpercentile(v_all, 80);
@@ -226,13 +237,14 @@ plt.plot(v_all[9])
 
 # add shift
 
-add_shift = { 2 : 2, 7 : 10, 12 : 10, 18 : 10, 22 : 10, 23 : 10, 24 : 10, 35 : 10, 70 : 10, 72 : 10, 73: 10,  77 : 10, 78 : 10, 92: 10, 100:10, 101: 10, 105: 10, 109: 10}
-             
+add_shift = {0 : 10, 10: 10, 11: 10, 13 : 10}
+
+
 hatching_cor = hatching.copy();
 for k,v in add_shift.iteritems():
   hatching_cor[k] += v;
 
-h = np.array([np.nonzero(v_all[wid,hatching_cor[wid]:] > 0.45)[0][0] for wid in range(nworms)]);
+h = np.array([np.nonzero(v_all[wid,hatching_cor[wid]:] > 0.5)[0][0] for wid in range(nworms)]);
 
 hatching_cor += h - 1;
 #transitions_cor[27,0] += -12;
@@ -248,7 +260,7 @@ plt.plot(v_all[wid])
 plt.scatter(hatching_cor[wid], v_all[wid][hatching_cor[wid]], c ='r', s = 60)
 
 
-### Compose Transitions Indices
+#%% Compose Transitions Indices
 
 transitions = np.zeros((nworms, 6), dtype = int)
 
@@ -286,15 +298,15 @@ plt.xlabel('time [hrs]');
 plt.ylabel('worm id');
 plt.tight_layout()
 
-fig.savefig(os.path.join(fig_directory, 'stage_detection_all.pdf'))
+fig.savefig(os.path.join(fig_directory, '%s_stage_detection_all.pdf' % strain))
 
 
 
-### Plot example figure for lethragus phase detection
+#%% Plot example figure for lethragus phase detection
 
 fig = plt.figure(106); plt.clf();
 
-wid = 0;
+wid = 2;
 rf = sig.savgol_filter(r_all[wid, :],51, 7)
 plt.scatter(l_pks[wid][:,0], l_pks[wid][:,1], s = 60, c = 'r')
 plt.plot(rf, 'k')
@@ -306,13 +318,13 @@ plt.xticks(days, labl);
 plt.xlabel('time [hrs]'); 
 plt.ylabel('-rotation');
 
-fig.savefig(os.path.join(fig_directory, 'stage_detection_wid=%d.pdf'%wid))
+fig.savefig(os.path.join(fig_directory, '%s_stage_detection_wid=%d.pdf'% (strain, wid)))
 
 
 
 
 
-### Transition times - high time resolution
+#%% Transition times - high time resolution
 
 def binned_average(x, bin_width = 10):
   n = len(x);
@@ -340,21 +352,22 @@ def find_transitions(x, transition0, window = 500, bin_width = 10):
     
 
 
-### Transitions times as indices in original data 
+#%% Transitions times as indices in original data 
 
 transitions_id = np.array([rate * time_bin * transitions[w,:] for w in range(nworms)])
 transitions_id[:,-1] = transitions_id[:,-2] + 16 * 60 * 60 * rate; # 16hrs into adulthood
 transitions_id[transitions_id < 0] = 0;
 
 transitions_id_fine = transitions_id.copy();
-for wid in range(nworms):
-  #r = exp.load(strain = 'n2', wid = wid, dtype = 'rotation')
-  v = exp.load(strain = 'n2', wid = wid, dtype = 'speed')
-  #transitions_id_fine[wid][1:-1] = find_transitions(v, transitions_id[wid][1:-1], window = 20000, bin_width = 3 * 60)
-  transitions_id_fine[wid][1:-1] = find_transitions(v, transitions_id[wid][1:-1], window = 20000, bin_width = 3 * 60 * 15)
+#for wid in range(nworms):
+#  #r = exp.load(strain = 'n2', wid = wid, dtype = 'rotation')
+#  v = exp.load(strain = strain, wid = wid, dtype = 'speed')
+#  #transitions_id_fine[wid][1:-1] = find_transitions(v, transitions_id[wid][1:-1], window = 20000, bin_width = 3 * 60)
+#  transitions_id_fine[wid][1:-1] = find_transitions(v, transitions_id[wid][1:-1], window = 10000, bin_width = 3 * 60 * 15)
 
+# not fine tuning really required !
 
-### Plot original data with transition points
+#%% Plot original data with transition points
 
 r_full_plt = r_full.copy();
 r_full_plt[np.isnan(r_full)] = 0;
@@ -376,7 +389,7 @@ fplt.plot_array(v_full_plt)
 
 
 
-##############################################################################
+#%%############################################################################
 ### Save data
 
 #np.save(os.path.join(exp.data_directory, 'n2_stage.npy'), transitions_id_fine)
@@ -388,17 +401,38 @@ fplt.plot_array(v_full_plt)
 l = [];
 for wid in range(nworms):
   print wid;
-  xy = exp.load(strain = 'n2', wid = wid);
+  xy = exp.load(strain = strain, wid = wid);
   l.append(len(xy));
 
 st = np.concatenate((transitions_id_fine, np.array([l]).T), axis = 1)
 
-np.save(os.path.join(exp.data_directory, 'n2_stage.npy'), st)
+np.save(os.path.join(exp.data_directory, '%s_stage.npy' % strain), st)
+
+
+#%% Make sure the final stage time is within data set 
+
+st = exp.load_stage_times(strain = strain);
+
+ids = np.where(st[:,-1] < st[:,-2])[0];
+if len(ids) > 0:
+  st[ids,-2] = st[ids, -1];
+
+np.save(os.path.join(exp.data_directory, '%s_stage.npy' % strain), st)
 
 
 
 
-### Align to different transitions
+
+
+
+
+
+#%%############################################################################
+### Analyse Transitions
+
+
+
+#%% Align to different transitions
 
 def plot_aligned(data_all, transitions, label = 'data', dt = time_bin, phase = 0):
   phase_names = ['hatch', 'L1', 'L2', 'L3', 'L4', 'L5'];
@@ -462,7 +496,7 @@ for s in range(4):
 fig.savefig(os.path.join(fig_directory, 'stage_durations_histogram.pdf'))
 
 
-### Correlation between transitions times
+#%% Correlation between transitions times
 
 fig = plt.figure(411); plt.clf();
 k = 0;
@@ -478,7 +512,7 @@ fig.savefig(os.path.join(fig_directory, 'stage_durations_correlation.pdf'))
 
 
 
-### PCA on stage durations
+#%% PCA on stage durations
 
 fig = plt.figure(412); plt.clf();
 fplt.plot_pca(dt[:,:-1])
@@ -490,7 +524,7 @@ fig.savefig(os.path.join(fig_directory, 'stage_durations_pca.pdf'))
 
 
 
-### Get stage durations from Roaming Dwelling data set
+#%% Get stage durations from Roaming Dwelling data set
 
 strain = 'N2';
 
@@ -499,13 +533,13 @@ rd_data = rexp.load_data(strain);
 rd_stage_ids = rd_data.stage_switch;
 rd_stage_dur = rd_data.stage_durations;
 
-### Get stage durations from automatic detection
+#%% Get stage durations from automatic detection
 
 xy_stage_ids = np.load(os.path.join(exp.data_directory, 'transitions_times.npy'))
 xy_stage_dur = np.diff(xy_stage_ids, axis = 1)
 
 
-### Plot Stage Durations 
+#%% Plot Stage Durations 
 
 
 fig = plt.figure(1); plt.clf();
@@ -530,7 +564,7 @@ fig.savefig(os.path.join(fig_directory, 'stage_durations_auto_vs_hand.pdf'))
 
 
 
-### Stage Durations rounded
+#%% Stage Durations rounded
 
 rate = 3.0 * 60 * 60;
 
@@ -547,7 +581,7 @@ plt.title('L%d' % (s+1));
 plt.xlabel('t [hr] (automatic)');
 plt.ylabel('t [hr] (manual)');
 plt.grid(True)
-fig.savefig(os.path.join(fig_directory, 'stage_durations_auto_vs_hand_rounded.pdf'))
+fig.savefig(os.path.join(fig_directory, '%s_stage_durations_auto_vs_hand_rounded.pdf' % strain))
 
 
 import scipy.stats as st
@@ -557,10 +591,7 @@ lr = st.linregress(xy_switch_hr[:,:-1].flatten(), rd_switch_hr[:,:-1].flatten())
 
 
 
-
-
-
-### Roaming data
+#%% Roaming data
 
 
 rd_all_0 = [];
@@ -585,21 +616,4 @@ for p in range(4):
   plot_aligned(rd_all[:,:tfinal], transitions, phase = p)
   fig.savefig(os.path.join(fig_directory, 'stage_detection_roaming_align=%s.pdf' % phase_names[p]))
   plt.xlim(0, 72 * 60 * 60 / time_bin)
-
-
-
-
-
-
-
-    
-
-    
-    
-    
-
-
-
-
-
 

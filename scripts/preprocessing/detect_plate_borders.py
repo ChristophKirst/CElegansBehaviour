@@ -9,25 +9,26 @@ import numpy as np;
 import matplotlib.pyplot as plt
 
 import analysis.experiment as exp;
-import scripts.preprocessing.file_order as fo;
+import scripts.preprocessing.filenames as fn;
 
-dir_names = fo.directory_names;
 
-strain = 'n2';
-wid = 0;
+#strain = 'daf7';
+strain = 'n2'
 
-nworms = len(fo.directory_names)
+nworms, exp_names, dir_names = fn.filenames(strain = strain);
 
-### Load Plate Images
+
+
+#%% Load Plate Images
 
 import scipy.io
 import glob;
 
-def find_plate(strain = 'n2', wid = 0, verbose = True, save = None, thresholds = [160, 175]):
+def find_plate(strain, wid = 0, verbose = True, save = None, thresholds = [160, 175]):
   
   fns = np.sort(np.unique(glob.glob(os.path.join(dir_names[wid], 'Traj*.mat'))))
   img_plate = scipy.io.loadmat(fns[-1])['Trace'];
-  xy = exp.load(strain = 'n2', wid = wid, dtype = 'xy')
+  xy = exp.load(strain = strain, wid = wid, dtype = 'xy')
   
   ### Detect circles
   
@@ -74,11 +75,12 @@ def find_plate(strain = 'n2', wid = 0, verbose = True, save = None, thresholds =
       # draw the center of the circle
       ax.add_artist(plt.Circle((x,y),2, color = 'green', fill = True))
   
-    plt.title('Worm %s, Experiment: %s' % (wid, fo.experiment_names[wid]) )
+    plt.title('Worm %s, Experiment: %s' % (wid, exp_names[wid]) )
     plt.show();
-
-  
-  plate = np.where(np.linalg.norm(center - pt, axis = 1) < radius)[0];
+    
+  plate = np.where(np.linalg.norm(center - pt, axis = 1) < 1 * radius)[0];
+  #if len(plate) == 0:
+  #  plate = np.where(np.linalg.norm(center - pt, axis = 1) < 1.05 * radius)[0];
   
   if len(plate) != 1:
     print 'could not find plate for worm %d, %s!' % (wid, strain);
@@ -98,15 +100,19 @@ def find_plate(strain = 'n2', wid = 0, verbose = True, save = None, thresholds =
   return [x,y,r];
 
 
+
+#%%
 #find_plate(strain = 'n2', wid = 2, verbose = True, save = None, thresholds = [165, 195])
 
+fn = '/home/ckirst/Science/Projects/CElegans/Analysis/WormBehaviour/Figures/Plates/%s_wid=%s.pdf' % (strain, '%d');
 
-roi = [find_plate(strain = 'n2', wid = w, verbose = True, save = None, thresholds = [160, 195]) for w in range(nworms)]
+
+roi = [find_plate(strain = strain, wid = w, verbose = True, save = (fn%w), thresholds = [160, 195]) for w in range(nworms)]
 
 
 roi = np.array(roi);
 
-fn = os.path.join(exp.data_directory, 'n2_roi.npy')
+fn = os.path.join(exp.data_directory, '%s_roi.npy' % strain)
 np.save(fn, roi)
 
 print 'result written to %s' % fn

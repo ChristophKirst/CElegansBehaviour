@@ -4,7 +4,7 @@ Fast plotting of large matrices via pyqtgraph
 
 This is module provides scripts to plot large matrices or point clouds in a fast way
 using pyqtgraph and opengl.
-"""
+""" 
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
 __author__ = 'Christoph Kirst <ckirst@rockefeller.edu>'
 __docformat__ = 'rest'
