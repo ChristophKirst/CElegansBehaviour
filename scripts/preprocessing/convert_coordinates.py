@@ -26,6 +26,8 @@ strain = 'n2' # 'tph1', 'npr1'
 strain = 'tph1'
 strain = 'npr1'
 strain = 'daf7'
+strain = 'cat2'
+strain = 'tdc1'
 nworms, exp_names, dir_names = f.filenames(strain = strain);
 
 

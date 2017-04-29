@@ -14,6 +14,8 @@ import scripts.preprocessing.filenames as fn;
 
 #strain = 'daf7';
 strain = 'n2'
+strain = 'cat2'
+strain = 'tdc1'
 
 nworms, exp_names, dir_names = fn.filenames(strain = strain);
 

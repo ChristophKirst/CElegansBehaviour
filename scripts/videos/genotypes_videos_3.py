@@ -23,17 +23,35 @@ reload(v);
 
 #%% N2 / tph-1 / npr-1 combined 
 
-nstrains = 36;
-ntot = 36 * 3 + 14;
+nstrains = 16;
+ntot = 16 * 3 + 14;
 
 strains = ['n2'] * nstrains;
 strains.extend(['tph1'] * nstrains);
 strains.extend(['npr1'] * nstrains);
 strains.extend(['daf7'] * 14);
 
-wids = np.array(range(nstrains) * 4)[:ntot];
+#wids = np.array(range(nstrains) * 4)[:ntot];
 
+# roamng fraction
+wids= [];
+for s in ['n2', 'tph1', 'npr1', 'daf7']:
+  roam = exp.load(strain = s, wid = all, dtype = 'speed');
+  means = np.array([np.nanmean(r) for r in roam]);
+  ids = np.argsort(means);
+  print ids;
+  nworms = len(ids);
+  if nworms <= 16:
+    wids.append(ids);
+  else:
+    sel = np.array(np.linspace(0, nworms-1, np.min([nworms, 18])), dtype = int);
+    sel = sel[1:-1];
+    assert(len(sel) == 16)
+    wids.append(ids[sel]);
+
+wids = np.hstack(wids);
 nworms = len(wids);
+
 
 #%%
 
@@ -44,17 +62,17 @@ for i,s,w in zip(range(nworms),strains, wids):
  
 
 delta_t = 2 * 60 * 3; #  sec * sample rate
-fps = 30;
+fps = 60;
 subsample = 6 * 2;
 dt = delta_t / subsample;
-traj_hist = 60 # history of traj in minutes
+traj_hist = 30 # history of traj in minutes
 traj_length = traj_hist * 3 * 60 / dt;
 print 'trajectory history is %f min, sampled every %f secs = %d points' % ((1.0 * traj_length * dt / 3.0 / 60), 1.0 * dt /3, traj_length) ;
 print 'frame time difference: %f sec' % (delta_t / 3.0)
 
 #times = np.array([np.arange(ts,te,dt) for ts,te in zip(stimes[:,0], stimes[:,-1])], dtype = int)
 
-aligned = 'aligned';
+aligned = 'raw';
 
 if aligned == 'aligned':
   sdurations = np.diff(stimes, axis = 1);
@@ -93,13 +111,17 @@ else: # raw time
 
 
 
-fname = os.path.join('/home/ckirst/Science/Projects/CElegans/Analysis/WormBehaviour/Movies', 'worm_life_genotypes_%s.mov' % aligned);
+fname = os.path.join('/home/ckirst/Science/Projects/CElegans/Analysis/WormBehaviour/Movies', 'worm_life_genotypes_%s_%d.mov' % (aligned, traj_hist));
 #fname = None;
+
+# fix starting time for tph=1 worm
+times[16+14,:] += 3500;
+
 
 #%%
 
 reload(v);
-fig = plt.figure(1, figsize = (4,3), dpi = 300, facecolor = 'w'); plt.clf();
+fig = plt.figure(1, figsize = (3.75,3.25), dpi = 300, facecolor = 'w'); plt.clf();
 plt.subplots_adjust(left=0.015, right=0.985, top=0.955, bottom=0.035, hspace = 0.075, wspace = 0.075)
 
 
@@ -114,20 +136,20 @@ gsAll = gridspec.GridSpec(2,2, left = 0.00, right = 1.0, top = 0.95, bottom = 0,
 
 gsGeno = [];
 for i in range(4):
-  gsGeno.append( gridspec.GridSpecFromSubplotSpec(6, 6, subplot_spec=gsAll[i],  hspace = 0.01, wspace = 0.01));
+  gsGeno.append( gridspec.GridSpecFromSubplotSpec(4, 4, subplot_spec=gsAll[i],  hspace = 0.01, wspace = 0.01));
 
 geno = -1;
 
 for i,s,w in zip(range(nworms),strains, wids):
   print i,s,w
-  if i % 36 == 0:
+  if i % 16 == 0:
     geno += 1;
   if geno != 3:
-    ax = plt.Subplot(fig, gsGeno[geno][(i %36) / 6, i % 6]);
+    ax = plt.Subplot(fig, gsGeno[geno][(i %16) / 4, i % 4]);
   else:
-    k = (i%36);
-    ax = plt.Subplot(fig, gsGeno[geno][k / 3, k % 3])
-  if i % 36 == 0:
+    k = (i%16);
+    ax = plt.Subplot(fig, gsGeno[geno][k / 4, k % 4])
+  if i % 16 == 0:
     ax.annotate(s, (0, 100));
   fig.add_subplot(ax, xycoords = 'figure points');
   tcm = plt.cm.gray_r;
@@ -141,6 +163,10 @@ for i,s,w in zip(range(nworms),strains, wids):
   pcol = plt.cm.coolwarm(1.0 * i / len(wids)); 
   xy = exp.load(strain = s, wid = w, dtype = 'xy');
   xy[:times[i,0]] = np.nan;
+  
+  #fill in missing positions
+  #ids = np.logical_or(np.isnan(xy[:,0]), np.isnan(xy[:,1]));
+    
   
   p = v.WormPlot(ax, strain = s, wid = w, time = times[i,0], xy = xy.copy(), 
            image = False,
@@ -185,7 +211,7 @@ for i,s in enumerate(['N2', 'tph-1', 'npr-1', 'daf-7']):
   ypos = tops[i / 2];
   xpos = lefts[i % 2];
 
-  plt.annotate(s, (xpos + 0.014, ypos + 0.014) , xycoords = 'figure fraction', verticalalignment= 'center', horizontalalignment = 'left', fontsize = 4.5, fontstyle = fs, color = colors['darkblue'])
+  plt.annotate(s, (xpos + 0.014, ypos + 0.014) , xycoords = 'figure fraction', verticalalignment= 'center', horizontalalignment = 'left', fontsize = 5.5, fontstyle = fs, color = colors['darkblue'])
 
 
 #%%
@@ -208,14 +234,18 @@ a = v.WormAnimation(figure = fig, plots = plots, times = times,
                     time_stamp = True,
                     time_stamp_text = time_text,
                     time_stamp_font_size = 8,
-                    time_stamp_position = (0.80, 0.415),
+                    time_stamp_position = (0.82, 0.05),
                     save = fname, fps = 30, dpi = 300);
 
 fig.show()
+#a.time_stamp.set_position((0.82, 0.05))
 
 
 #%%
 a.animate()
+
+
+
 
 
 

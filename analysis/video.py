@@ -9,6 +9,7 @@ Video Generator
 
 import numpy as np;
 
+import matplotlib as mpl;
 import matplotlib.pyplot as plt;
 import matplotlib.patches as patches;
 
@@ -23,6 +24,7 @@ import matplotlib.animation as manimation
 ###############################################################################
 
 def time_str(sec, sample_rate = 3.0):
+  #sec = float(sec);
   sec /= sample_rate;
   m, s = divmod(sec, 60);
   h, m = divmod(m,   60);
@@ -51,17 +53,17 @@ def round_xy(xy):
 default_stage_colors = ['#ed1c24', '#231f20', '#2e3192', '#27963c', '#918f8f', '#918f8f'];
 
 def default_time_stamp_position(xlim, ylim):
-  return [xlim[0] + 10, ylim[0] + 50];
+  return [xlim[0] + 10, ylim[1] - 50];
 
 def default_stage_stamp_position(xlim, ylim):
-  return [xlim[1] - 10, ylim[0] + 50];
+  return [xlim[1] - 10, ylim[1] - 50];
 
-def default_stage_indicator_poistion(time, time_max, time_min, xlim, ylim, time_end = None):
+def default_stage_indicator_position(time, time_max, time_min, xlim, ylim, time_end = None):
   sizefac= 0.9;
   plot_range = xlim[1] - xlim[0];
   off = xlim[0] + (1 - sizefac) * plot_range / 2.0;
   x = sizefac * (time - time_min) / (time_max - time_min) * plot_range + off;
-  y = 20 + ylim[0];
+  y = -20 + ylim[1];
   if time_end is None:
     return [x,y];
   else:
@@ -70,7 +72,7 @@ def default_stage_indicator_poistion(time, time_max, time_min, xlim, ylim, time_
     return x,y,w,h;
 
 def default_legend_position(index, xlim, ylim):
-  return [10, ylim[1]-100 + index * 50];
+  return [10, ylim[0]+100 + index * 50];
 
 ###############################################################################
 ### Worm trajecotry / plate plotting
@@ -86,6 +88,7 @@ class WormPlot(object):
                image = True, 
                image_source = None, image_data = None,
                image_vmin = 84, image_vmax = 92, image_sigma = 1.0, image_border = 75, image_cmap = plt.cm.gray,
+               image_filter = None,
                
                plate = True, 
                plate_color = 'k', plate_fill = False, plate_linewidth = 1,
@@ -105,7 +108,7 @@ class WormPlot(object):
                stage_indicator = True, 
                stage_indicator_colors = default_stage_colors, stage_indicator_size = 7.5,
                stage_indicator_color  = 'black',
-               stage_indicator_position = default_stage_indicator_poistion, stage_indicator_label = stage_str, stage_indicator_label_offset = 50, stage_indicator_label_font_size = 12,
+               stage_indicator_position = default_stage_indicator_position, stage_indicator_label = stage_str, stage_indicator_label_offset = 50, stage_indicator_label_font_size = 12,
                
                legend = False, 
                legend_text = None,
@@ -140,6 +143,7 @@ class WormPlot(object):
     
     if image:
       self.image_sigma = image_sigma;
+      self.image_filter = image_filter;
       
       if image_source is None:
         self.image_source = exp.load_img(strain = strain , wid = wid);
@@ -147,9 +151,16 @@ class WormPlot(object):
         self.image_source = image_source;
        
       if image_data is None:
-        image_data = exp.load_img(strain = strain, wid = wid, t = time, sigma = image_sigma);
+        image_data = exp.load_img(strain = strain, wid = wid, t = time);
       else:
         image_data = image.copy();
+      
+      if self.image_filter is not None:
+          image_data = self.image_filter(image_data);
+      
+      if self.image_sigma is not None:
+         image_data = exp.smooth_image(image_data, sigma = self.image_sigma);
+      
       self.image_size = image_data.shape;
       self.image_vmin = image_vmin;
     
@@ -170,6 +181,7 @@ class WormPlot(object):
     axis.set_axis_off();
     axis.set_xlim(self.xlim[0], self.xlim[1]);
     axis.set_ylim(self.ylim[0], self.ylim[1]);
+    axis.invert_yaxis();
     axis.set_aspect('equal');
     if title is not None:
       axis.set_title(title);
@@ -249,7 +261,7 @@ class WormPlot(object):
         axis.add_patch(self.stage_indicator_rect[s]);
         if stage_indicator_label is not None:
           font = {'size': stage_indicator_label_font_size }
-          self.stage_indicator_label.append(axis.text(x + w / 2.0, y - stage_indicator_label_offset, stage_indicator_label(s+1), 
+          self.stage_indicator_label.append(axis.text(x + w / 2.0, y + stage_indicator_label_offset, stage_indicator_label(s+1), 
                                                      fontdict = font, horizontalalignment='center', color = stage_indicator_colors[s]));
       
       x, y = stage_indicator_position(time, self.stage_time_max, self.stage_time_min, self.xlim, self.ylim);
@@ -290,7 +302,14 @@ class WormPlot(object):
     
     # update worm image and position
     if self.image is not None:
-      image_data = exp.smooth_image(self.image_source[time], sigma = self.image_sigma);
+      image_data = self.image_source[time];
+      
+      if self.image_filter is not None:
+        image_data = self.image_filter(image_data);
+          
+      if self.image_sigma is not None:
+        image_data = exp.smooth_image(image_data, sigma = self.image_sigma);
+      
       image_data = image_data[::-1, :];
       if image_data[0,0] > 10e-10 and image_data[0,0] != np.nan: # exclude invalid images
         self.image.set_data(image_data);
@@ -361,6 +380,8 @@ class WormAnimation(object):
       self.writer.setup(self.figure, save, dpi = dpi);
     else:
       self.writer = None;
+      
+    self.time_id = np.argmax(times[:,-1]);
     
   
   def animate(self):
@@ -369,7 +390,7 @@ class WormAnimation(object):
         p.update(self.times[pi][ti]);
     
       if self.time_stamp is not None:
-        self.time_stamp.set_text(self.time_stamp_text(self.times[0][ti]-self.times[0][0], ti));
+        self.time_stamp.set_text(self.time_stamp_text(self.times[self.time_id][ti]-self.times[self.time_id][0], ti));
       
       self.figure.canvas.draw();
       self.figure.canvas.flush_events()   
@@ -512,8 +533,24 @@ class WormGui(object):
   
     # xy history
     x = np.zeros(self.trajectory_length);
-    fade = np.array(np.linspace(5, 255, self.trajectory_length), dtype = int)[::-1];
-    self.brushes = np.array([pg.QtGui.QBrush(pg.QtGui.QColor(255, i, i)) for i in fade]);
+    if trajectory_cmap is None:
+      self.trajectory_cmap = plt.cm.Reds;
+    else:
+      self.trajectory_cmap = trajectory_cmap;
+    
+    if self.trajectory_data is None:
+      self.trajectory_norm = mpl.colors.Normalize(vmin = 0, vmax = self.trajectory_length-1);
+      cols = np.array(self.trajectory_cmap(self.trajectory_norm(np.arange(self.trajectory_length)))[:,:3] * 255, dtype = int);
+      self.brushes = np.array([pg.QtGui.QBrush(pg.QtGui.QColor(c[0], c[1], c[2])) for c in cols]);
+    else:
+      if trajectory_vmin is None:
+        trajectory_vmin = np.min(self.trajectory_data);
+      if trajectory_vmax is None:
+        trajectory_vmax = np.max(self.trajectory_data);
+      self.trajectory_norm = mpl.colors.Normalize(vmin = trajectory_vmin, vmax = trajectory_vmax);
+      cols = np.array(self.trajectory_cmap(self.trajectory_norm(np.full(x.shape, trajectory_vmax)))[:,:3] * 255, dtype = int);
+      self.brushes = np.array([pg.QtGui.QBrush(pg.QtGui.QColor(c[0], c[1], c[2])) for c in cols]);
+      
     #self.brushes = np.array([pg.QtGui.QBrush(pg.QtGui.QColor(255, 0, 0)) for i in fade]);
     self.pxy = pg.ScatterPlotItem(x, x, size = 2, pen=pg.mkPen(None), brush = self.brushes)  # brush=pg.mkBrush(255, 255, 255, 120))
     self.img.addItem(self.pxy)
@@ -683,6 +720,10 @@ class WormGui(object):
     x = self.xy[ts:te:self.trajectory_delta,0];
     y = self.xy[ts:te:self.trajectory_delta,1];
     self.pxy.setData(x,y);
+    if self.trajectory_data is not None:
+      td = self.trajectory_data[ts:te:self.trajectory_delta];
+      cols = np.array(self.trajectory_cmap(self.trajectory_norm(td))[:,:3] * 255, dtype = int);
+      self.brushes = np.array([pg.QtGui.QBrush(pg.QtGui.QColor(c[0], c[1], c[2])) for c in cols]);
     self.pxy.setBrush(self.brushes[-len(x):]);
 
     # feature traces
