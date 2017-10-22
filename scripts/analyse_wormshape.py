@@ -7,8 +7,7 @@ Long Term Behaviour Analysis of C-elegans
 Detect worm shapes / postures
 """
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'
-__author__ = 'Christoph Kirst <ckirst@rockefeller.edu>'
-__docformat__ = 'rest'
+__author__  = 'Christoph Kirst <ckirst@rockefeller.edu>'
 
 import os
 import numpy as np
