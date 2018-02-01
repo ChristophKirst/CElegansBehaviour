@@ -86,7 +86,7 @@ class plot_array():
 import pyqtgraph.opengl as gl
 
 class plot3d():
-  """Plots a 3d could of points"""
+  """Plots a 3d cloud of points"""
   def __init__(self, points, title = None):
     pg.mkQApp();
     self.w = gl.GLViewWidget()

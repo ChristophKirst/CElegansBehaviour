@@ -25,11 +25,13 @@ from scipy.interpolate import splev, splprep, UnivariateSpline
 #from scipy.interpolate import splrep, dfitpack
 from scipy.spatial import Voronoi
 
+import cv2
+
 from interpolation.spline import Spline
 from interpolation.curve import Curve
 
 from interpolation.resampling import resample as resample_curve
-from interpolation.intersections import curve_intersections_discrete;
+#from interpolation.intersections import curve_intersections_discrete;
 
 from signalprocessing.peak_detection import find_peaks
 
@@ -241,6 +243,109 @@ def center_from_sides_projection(left, right, npoints = all, nsamples = all, res
       right_point = rightline.interpolate(rightline.project(mid_point));
       left_point  =  leftline.interpolate( leftline.project(mid_point));
       width[i] = np.linalg.norm(np.array([left_point.x - right_point.x, left_point.y - right_point.y]));
+    
+    return center, width
+
+
+
+def center_from_sides_min_projection(left, right, npoints = all, nsamples = all, resample = False, with_width = False, smooth = 0, center_offset = 2):
+  """Finds middle line between the two side curves using projection method with minimal  advancements
+  
+  Arguments:
+    left, right (nx2 array): vertices of the left and right curves
+    npoints (int or all): number of points of the mid line
+    nsamples (int or all): number of sample points to contruct midline
+    with_width (bool): if True also return estimated width
+    nneighbours (int or all): number of neighbouring points to include for projection
+  
+  Returns:
+    nx2 array of midline vertices
+  """
+  # resample to same size
+  nl = left.shape[0];
+  nr = right.shape[0];
+  if nsamples is all:
+    nsamples = max(nl,nr);
+  if npoints is all:
+    npoints = max(nl,nr);
+  
+  if nl != nsamples or nr != nsamples or resample:
+    leftcurve  = resample_curve(left, nsamples);
+    rightcurve = resample_curve(right, nsamples);
+  else:
+    leftcurve = left;
+    rightcurve = right;
+  
+  # calculate center
+  full_left = [leftcurve[i] for i in range(center_offset)];
+  full_right = [rightcurve[i] for i in range(center_offset)];
+  width = [0];
+  il = center_offset-1; ir = center_offset-1;
+  rightline = geom.LineString(rightcurve[il:il+2]);
+  leftline  = geom.LineString( leftcurve[ir:ir+2]); 
+  
+  il = center_offset; ir = center_offset;
+  left_point  = geom.Point(leftcurve[il,0], leftcurve[il,1]);
+  right_point = geom.Point(rightcurve[ir,0], rightcurve[ir,1]); 
+  
+  while il < nsamples-center_offset-1 and ir < nsamples-center_offset-1:
+    #print il,ir
+    ul = leftline.project(right_point, normalized = True);
+    ur = rightline.project(left_point, normalized = True);
+    #print ul,ur
+    #print left_point, right_point
+    if ul == ur:
+      full_left.append(left_point.coords[0]);
+      full_right.append(right_point.coords[0]);
+      leftline = geom.LineString(leftcurve[il:il+2]);
+      rightline = geom.LineString(rightcurve[ir:ir+2]);
+      il+=1;
+      ir+=1;
+      left_point = geom.Point(leftcurve[il,0], leftcurve[il,1]);
+      right_point = geom.Point(rightcurve[ir,0], rightcurve[ir,1]);
+    elif ul < ur: # add center from right
+      full_left.append(leftline.interpolate(ul, normalized = True).coords[0]);
+      full_right.append(right_point.coords[0]);
+      rightline = geom.LineString(rightcurve[ir:ir+2]);
+      ir+=1;
+      right_point = geom.Point(rightcurve[ir,0], rightcurve[ir,1]);
+    else:
+      full_left.append(left_point.coords[0]);
+      full_right.append(rightline.interpolate(ur, normalized = True).coords[0]);
+      leftline = geom.LineString(leftcurve[il:il+2]);
+      il+=1;
+      left_point = geom.Point(leftcurve[il,0], leftcurve[il,1]);
+  
+  
+  full_left.extend([leftcurve[i] for i in range(-center_offset,0)]);
+  full_right.extend([rightcurve[i] for i in range(-center_offset,0)]);
+  
+  full_left = np.array(full_left);
+  full_right = np.array(full_right);
+  
+  #print full_left
+  #print full_right
+  center = (full_left + full_right)/2.0;
+  center = resample_curve(center, npoints, smooth = smooth);
+  
+  #print center
+  
+  if not with_width:
+    return center;
+  else:
+    width = np.linalg.norm(full_left-full_right, axis = 1);
+    width = 0.5 * resample_curve(width, npoints, smooth = 0);
+    #lc = np.asarray(leftcurve, dtype = 'float32');
+    #rc = np.asarray(rightcurve, dtype = 'float32');
+    #cnt = np.vstack(lc, rc[::-1]);
+    #width_l = np.array([np.min(np.linalg.norm(leftcurve - c, axis = 1)) for c in center])  
+    #width_r = np.array([np.min(np.linalg.norm(rightcurve - c, axis = 1)) for c in center])  
+    
+    #width_l = np.array([cv2.pointPolygonTest(lc,(c[0],c[1]),True) for c in center]);
+    #width_r = np.array([cv2.pointPolygonTest(rc,(c[0],c[1]),True) for c in center]);
+    #width = (width_l + width_r); 
+    #width = 2* np.min([width_l, width_r], axis = 0);
+    #width[[0,-1]] = 0.0;
   
     return center, width
 
@@ -365,11 +470,11 @@ def center_from_sides_erosion(left, right, erode = 0.1, maxiter = 100, delta = 0
     if peaks.shape[0] == 1:
       # best guess is half way along the contour
       if verbose:
-        print "Could only detect single curvature peak in contour, proceeding with opposite point as tail!"
+        print('Could only detect single curvature peak in contour, proceeding with opposite point as tail!')
       imax = np.sort(np.asarray(np.mod(peaks[0,0] + np.array([0,ncontour//2]), ncontour), dtype = int));
     else:
       if verbose:
-        print "Could not detect any peaks in contour, proceeding with 0% and 50% of contour as head and tail!"
+        print('Could not detect any peaks in contour, proceeding with 0% and 50% of contour as head and tail!')
       imax = np.asarray(np.round([0, ncontour//2]), dtype = int);
   else:
     imax = np.sort(np.asarray(peaks[np.argsort(peaks[:,1])[-2:],0], dtype = int))
@@ -442,8 +547,13 @@ def length_from_center_discrete(center):
 
 def center_of_center_discrete(center):
   """Returns the center along the worm's center line"""
-  curve = Curve(center);
-  return curve(0.5);
+  n = len(center);
+  n2 = n//2;
+  if n % 2 == 0:
+    return (center[n2-1] + center[n2])/2;
+  else:
+    return center[n2];
+
 
 def rotate_center_discrete(center, rad, pos = [75,75]):
   """Rotate the center line"""
@@ -930,6 +1040,7 @@ shape_from_center = shape_from_center_discrete;
 
 
 def test_theta():
+  from importlib import reload
   import numpy as np
   import matplotlib.pyplot as plt;
   import worm.geometry as sh;
@@ -1158,9 +1269,12 @@ def move_forward_spline(distance, theta, orientation = None, xy = None, length =
 ##############################################################################
 ### Shape Detection from Image 
 
+
 def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
-                     ncontour = 100, delta = 0.3, smooth = 1.0, nneighbours = 4,
-                     npoints = 21, nsamples = all,
+                     ncontour = 100, delta = 0.3, smooth_head_tail = 1.0, smooth_left_right = 1.0, smooth_center = 10,
+                     npoints = 21, center_offset = 3, 
+                     threshold_reduce = 0.9, contour_hint = None, size_hint = None,
+                     delta_reduce = 0.5, head_tail_hint = None,
                      verbose = False, save = None):
   """Detect non self intersecting shapes of the the worm
   
@@ -1174,12 +1288,12 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
     smooth (float): smoothing to use for the countour 
     nneighbours (int): number of neighbours to consider for midline detection
     npoints (int): number of vertices in the final center and side lines of the worm
-    nsamples (int): number of vertices in for center line detection
+    nsamples (int): number of vertices for center line detection
     verbose (bool): plot results
     save (str or None): save result plot to this file
   
   Returns:
-    success (bool): if True the shape was successfully extracted (False if worm is curled up or to many contours)
+    status (bool): 0 the shape was successfully extracted, otherwise id of what method was used or which failure
     arrays (npointsx2): center, left, right side lines of the worm
     
   Note:
@@ -1198,87 +1312,203 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
   else:
     level = threshold_factor * threshold_otsu(imgs);
   
-  pts = detect_contour(imgs, level);
+  pts, hrchy = detect_contour(imgs, level, with_hierarchy = True);
+  if verbose:
+    print("Found %d countours!" % len(pts));
+    if verbose:
+      plt.subplot(2,3,3)
+      plt.imshow(imgs, cmap = 'gray')
+      for p in pts:
+        plt.plot(p[:,0], p[:,1]);
+      plt.contour(imgs, levels = [level])
+      plt.title('contour dectection')       
   
+  status = 0;   
   if len(pts) == 0:
-    if verbose:
-      print "Could not detect worm: No countours found!";
-    return False, np.zeros((npoints,2)), np.zeros((npoints,2)), np.zeros((npoints,2))  
-  elif len(pts) == 1:
-    pts, pts_inner = pts[0], None;    
-  elif len(pts) == 2:
-    if verbose:
-      print "Found two countours, worm most likely curled, proceeding with outer or largest contour!";
-
-    if pts[0].shape[0] < pts[1].shape[0]:
-      i,o = 0,1;
-    else:
-      i,o = 1,0;
-    if inside_polygon(pts[i], pts[o][0,:]):
-      i,o = o,i;
+    if threshold_reduce is not None:
+      pts, hrchy = detect_contour(imgs, threshold_reduce * level, with_hierarchy = True);
+      status += 1000;
     
-    pts, pts_inner = pts[o], pts[i];
-  else:
-    if verbose:
-      print "Could not detect worm: Found %d countours!" % len(pts);
-    return False, np.zeros((npoints,2)), np.zeros((npoints,2)), np.zeros((npoints,2))
+    if len(pts) == 0: # we cannot find the worm and give up...
+      
+      return -1, np.zeros((npoints,2)), np.zeros((npoints,2)), np.zeros((npoints,2), np.zeros(npoints))
+
+  
+  if len(pts) == 1:
+    pts = pts[0];
+    status += 1;
+  
+  else:   # length is  >= 2
+    # remove all contours that are children of others
+
+    outer = np.where(hrchy[:,-1] == -1 )[0];
+    areas = np.array([cv2.contourArea(pts[o]) for o in outer]);
+    outer = outer[areas > 0];
+
+    print(outer)
+    
+    if len(outer) == 1:
+      pts = pts[outer[0]]; # only one outer contour (worm mostlikely curled)
+      status += 2;
+      
+    else:
+      # is there contour with similar centroid and size to previous one
+      moments = [cv2.moments(pts[o]) for o in outer];
+      centroids = np.array([[(m["m10"] / m["m00"]), (m["m01"] / m["m00"])] for m in moments]);
+      
+      if contour_hint is not None:
+        dist = [cv2.matchShapes(pts[o], contour_hint, 2,0) for o in outer];
+        imin = np.argmin(dist);
+        status += 3;
+        pts = pts[outer[imin]]; 
+      elif size_hint is not None:
+        dist = np.array([cv2.contourArea(pts[o]) for o in outer]);
+        dist = np.abs(dist - size_hint);
+        imin = np.argmin(dist);
+        status += 4;
+        pts = pts[outer[imin]]; 
+      else:
+        #take most central one
+        dist = np.linalg.norm(centroids - np.array(image.shape)/2, axis = 1);
+        print(dist)
+        imin = np.argmin(dist);
+        status += 5;
+        pts = pts[outer[imin]];
+        
+      print(status, len(pts))
+
+  print('interpolate')
+   
   
   ### interpolate outer contour
-  cinterp, u = splprep(pts.T, u = None, s = smooth, per = 1) 
-  us = np.linspace(u.min(), u.max(), ncontour)
-  x, y = splev(us[:-1], cinterp, der = 0)
+  nextra = min(len(pts)-1, 20); # pts[0]==pts[-1] !!
+  print(pts[0], pts[-1])
+  ptsa = np.vstack([pts[-nextra:], pts, pts[:nextra]]);
+  cinterp, u = splprep(ptsa.T, u = None, s = smooth_head_tail, per = 0, k = 4) 
+  u0 = u[nextra];
+  u1 = u[-nextra-1];
+  us = np.linspace(u0, u1, ncontour+1)[:-1];
+  x, y = splev(us, cinterp, der = 0)
+  dx, dy = splev(us, cinterp, der = 1)
+  d2x, d2y = splev(us, cinterp, der = 2)
+  k = - (dx * d2y - dy * d2x)/np.power(dx**2 + dy**2, 1.5);
+  kk = np.hstack([k[-nextra:], k, k[:nextra]]);
+  
+  peak_ids, peak_values = find_peaks(kk, delta = delta);
+  
+  if len(peak_ids) > 0:
+    peak_ids -= nextra;
+    peak_values = peak_values[peak_ids>= 0]; peak_ids = peak_ids[peak_ids>= 0];  
+    peak_values = peak_values[peak_ids < ncontour]; peak_ids = peak_ids[peak_ids < ncontour]; 
+  
+  if len(peak_ids) < 2 and delta_reduce is not None:
+    peak_ids, peak_values = find_peaks(kk, delta = delta * delta_reduce);
 
-  ### curvature along the points
-  dx, dy = splev(us[:-1], cinterp, der = 1)
-  d2x, d2y = splev(us[:-1], cinterp, der = 2)
-  k = (dx * d2y - dy * d2x)/np.power(dx**2 + dy**2, 1.5);
-  
-  ### find tail / head via peak detection
-  #pad k to detect peaks on both sides
-  nextra = 20;
-  kk = -k; # negative curvature peaks are heads/tails
-  kk = np.hstack([kk[-nextra:], kk, kk[:nextra]]);
-  peaks = find_peaks(kk, delta = delta);
-  #print peaks.shape
-  
-  if peaks.shape[0] > 0:
-    peaks[:,0] -= nextra;
-    peaks = peaks[peaks[:,0] < k.shape[0],:];
-    peaks = peaks[peaks[:,0] >= 0,:];
-  #if peaks.shape[0] < 2:
-  #  peaks = find_peaks(np.abs(k), delta = 0.05);
-  
-  if peaks.shape[0] < 2:
-    if peaks.shape[0] == 1:
-      # best guess is half way along the contour
-      if verbose:
-        print "Could only detect on curvature peak in contour, proceeding with opposite point as tail!"
-      imax = np.sort(np.asarray(np.mod(peaks[0,0] + np.array([0,ncontour//2]), ncontour), dtype = int));
+    if len(peak_ids) > 0:
+      peak_ids -= nextra;
+      peak_values = peak_values[peak_ids>= 0]; peak_ids = peak_ids[peak_ids>= 0];  
+      peak_values = peak_values[peak_ids < ncontour]; peak_ids = peak_ids[peak_ids < ncontour]; 
+
+  if verbose:
+    print('Found %d peaks' % len(peak_ids));
+
+  # find head and tail
+  if len(peak_ids) >= 2:
+    if head_tail_hint is not None:
+      xy = np.array([x[peak_ids], y[peak_ids]]).T;
+      dist_h = np.linalg.norm(xy - head_tail_hint[0], axis = 1);
+      dist_t = np.linalg.norm(xy - head_tail_hint[1], axis = 1);
+      
+      i_h = np.argmin(dist_h);
+      i_t = np.argmin(dist_t);      
+      if i_h == i_t:
+        dist_t[i_t] = np.inf;
+        i_t = np.argmin(dist_t);        
+      
+      imax = [peak_ids[i_h], peak_ids[i_t]];   
+      status += 10;
+      
     else:
-      if verbose:
-        print "Could not detect any peaks in contour, proceeding with 0% and 50% of contour as head and tail!"
+      # best guess are the two highest ones
+      imax = np.sort(np.asarray(peak_ids[np.argsort(peak_values)[-2:]], dtype = int))
+      status += 20;
+  
+  elif len(peak_ids) == 1:
+    if head_tail_hint is not None:
+      xy = np.array([x[peak_ids[0]], y[peak_ids[0]]]).T;
+      dist_h = np.linalg.norm(xy - head_tail_hint[0], axis = 1);
+      dist_t = np.linalg.norm(xy - head_tail_hint[1], axis = 1);
+      
+      #closest point on contour to previous missing head/tail:
+      xy = np.array([x, y]).T;   
+      if dist_h <= dist_t:
+        dist = np.linalg.norm(xy - head_tail_hint[1], axis = 1);          
+        i_h = peak_ids[0]; 
+        i_t = np.argmin(dist);
+        if i_h == i_t:
+          dist[i_t] = np.inf;
+          i_t = np.argmin(dist);        
+        imax = [i_h, i_t];  
+      else:
+        dist = np.linalg.norm(xy - head_tail_hint[0], axis = 1);
+        i_t = peak_ids[0]; 
+        i_h = np.argmin(dist);
+        if i_h == i_t:
+          dist[i_h] = np.inf;
+          i_h = np.argmin(dist);        
+        imax = [i_h, i_t];  
+      status += 30;
+  
+    else:
+      # best guess is half way along the contour
+      imax = np.sort(np.asarray(np.mod(peak_ids[0] + np.array([0,ncontour//2]), ncontour), dtype = int));
+      status += 40
+  
+  else: #peaks.shape[0] == 0
+    if head_tail_hint is not None:
+      xy = np.array([x, y]).T;      
+      dist_h = np.linalg.norm(xy - head_tail_hint[0], axis = 1);
+      dist_t = np.linalg.norm(xy - head_tail_hint[1], axis = 1);
+      i_h = np.argmin(dist_h);
+      i_t = np.argmin(dist_t);
+      if i_h == i_t:
+        dist_t[i_t] = np.inf;
+        i_t = np.argmin(dist_t);        
+      imax = [i_h, i_t];  
+      status += 50;
+    else:
       imax = np.asarray(np.round([0, ncontour//2]), dtype = int);
-  else:
-    imax = np.sort(np.asarray(peaks[np.argsort(peaks[:,1])[-2:],0], dtype = int))
-  #print imax
+      status += 60;
+  print(imax, status)
+  
   
   ### calcualte sides and midline
-  u1 = np.linspace(us[imax[0]], us[imax[1]], npoints)
+  if smooth_left_right is not None and smooth_head_tail != smooth_left_right:
+    cinterp, u = splprep(ptsa.T, u = None, s = smooth_left_right, per = 0, k = 4) 
+    #u0 = u[nextra];
+    #u1 = u[-nextra-1];
+    #us = np.linspace(u0, u1, ncontour+1)[:-1];
+    #x, y = splev(us, cinterp, der = 0)  
+  
+  
+  u1 = np.linspace(us[imax[0]], us[imax[1]], ncontour)
   x1, y1 =  splev(u1, cinterp, der = 0);
   left = np.vstack([x1,y1]).T;
   
-  u2 = np.linspace(us[imax[0]], us[imax[1]]-1, npoints);
-  u2 = np.mod(u2,1);
+  u1 = u[-nextra-1];
+  du = u1-u0;
+  u2 = np.linspace(us[imax[0]], us[imax[1]]-du, ncontour);
+  u2[u2 < u0] += du;
   x2, y2 = splev(u2, cinterp, der = 0);
   right = np.vstack([x2,y2]).T;
   
   # midline 
   #xm = (x1 + x2) / 2; ym = (y1 + y2) / 2; # simple
-  if isinstance(nneighbours, int) and nneighbours <= 1:
-    center,width = center_from_sides_mean(left, right,  nsamples = nsamples, with_width = True);
-  else:
-    center, width = center_from_sides_projection(left, right, nsamples = nsamples, with_width = True, nneighbours = nneighbours);
-  
+  #if isinstance(nneighbours, int) and nneighbours <= 1:
+  #  center,width = center_from_sides_mean(left, right,  nsamples = nsamples, with_width = True);
+  #else:
+  #  center, width = center_from_sides_projection(left, right, nsamples = nsamples, with_width = True, nneighbours = nneighbours);
+  center, width = center_from_sides_min_projection(left, right, npoints = npoints, nsamples = ncontour, with_width = True, smooth = smooth_center, center_offset = center_offset);
   
   # worm center
   #xymintp, u = splprep(xym.T, u = None, s = 1.0, per = 0);  
@@ -1304,23 +1534,36 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
     plt.subplot(2,3,4)
     plt.plot(k)
     plt.scatter(imax, k[imax], c = 'r', s= 100);
-    if peaks.shape[0] > 0:
-      plt.scatter(peaks[:,0], -peaks[:,1], c = 'm', s= 40);
+    if len(peak_ids) > 0:
+      plt.scatter(peak_ids, peak_values, c = 'm', s= 40);
     plt.title('curvature')
     
     # shape detection
     plt.subplot(2,3,5)
     plt.imshow(image, cmap = 'gray', interpolation = 'nearest')
-    plt.plot(left[:,0]  ,left[:,1]  , 'g', linewidth= 3)
-    plt.plot(right[:,0] ,right[:,1] , 'y', linewidth= 3)
-    plt.plot(center[:,0],center[:,1], 'b')
+    
+    left1, right1 = shape_from_center_discrete(center, width);
+    plt.plot(left1[:,0]  , left1[:,1]  , 'r', linewidth= 2)
+    plt.plot(right1[:,0] , right1[:,1] , 'r', linewidth= 2)    
+    
+    
+    plt.plot(left[:,0]  , left[:,1]  , 'g', linewidth= 1)
+    plt.plot(right[:,0] , right[:,1] , 'y', linewidth= 1)
+    plt.plot(center[:,0], center[:,1], 'b')
+    
+    if smooth_left_right is not None and smooth_head_tail != smooth_left_right:
+      #  x, y = splev(us, cinterp, der = 0);
+      plt.plot(x,y, 'm', linewidth = 1);
+    
+
+    
     # plot segments
     #for i in range(len(xm)):
     #    plt.plot([x1[i], x2[nu[i]]], [y1[i], y2[nu[i]]], 'm')
     #plot center
     n2 = (npoints-1)//2;
     plt.scatter(center[n2,0], center[n2,1], color = 'k', s = 150)
-    plt.scatter(x[imax], y[imax], s=150, color='r');
+    #plt.scatter(x[imax], y[imax], s=150, color='r');
     plt.contour(imgs, levels = [level])
     plt.title('shape detection')
     
@@ -1329,7 +1572,7 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
     plt.plot(width);
     plt.title('width')
     
-    if isinstance(save, basestring):
+    if isinstance(save, str):
       fig = plt.gcf();
       fig.savefig(save);
   
@@ -1352,13 +1595,13 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
   #curvature_variation = np.sum(np.abs(ck))
   
   ### returns
-  success = pts_inner is None;
-  return success, center, left, right, width
+  #success = pts_inner is None;
+  return status, center, left, right, width
 
 
 
 def center_from_image_skeleton(image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, npoints = 21, smooth = 0, verbose = False, save = None):
-  """Detect non-self-intersecting center lines of the worm from an image usoing skeletonization
+  """Detect non-self-intersecting center lines of the worm from an image using skeletonization
   
   Arguments:
     image (array): the image to detect venterline of worm from
@@ -1522,7 +1765,7 @@ def contours_from_image(image, sigma = 1, absolute_threshold = None, threshold_f
   
   if len(cts) == 0:
     if verbose:
-      print "Could not detect worm: No countours found!";
+      print("Could not detect worm: No countours found!");
     #outer, inner = None, None;
     cts = ();
   elif len(cts) == 1:
@@ -1539,7 +1782,7 @@ def contours_from_image(image, sigma = 1, absolute_threshold = None, threshold_f
     cts = (cts[o], cts[i]);
   else:
     if verbose:
-      print "Found %d countours!" % len(cts);
+      print("Found %d countours!" % len(cts));
     #sort by length as a guess for outer contour
     l = [len(c) for c in cts];
     cts = tuple([cts[i] for i in np.argsort(l)]);
@@ -1559,7 +1802,7 @@ def contours_from_image(image, sigma = 1, absolute_threshold = None, threshold_f
       plt.plot(c[:,0], c[:,1])
     plt.title('contour dectection')
         
-    if isinstance(save, basestring):
+    if isinstance(save, str):
       fig = plt.gcf();
       fig.savefig(save);
   
@@ -1590,15 +1833,34 @@ def contours_from_shape_discrete(left, right):
   return tuple(cts)  
 
 
-def head_tail_from_contour_discrete(contour, ncontour = all, delta = 0.3, smooth = 1.0, with_index = False,
-                            verbose = False, save = None, image = None):
+def curvature_from_contour(contour,ncontour = all, smooth = 1.0):
+  if isinstance(contour, Curve):
+    contour = contour.values;
+  
+  # only detect heads on outer contour as ts very unlikely tofind it in inner one
+  if ncontour is all:
+    ncontour = contour.shape[0];
+  
+  cinterp, u = splprep(contour.T, u = None, s = smooth, per = 1) 
+  us = np.linspace(u.min(), u.max(), ncontour)
+  x, y = splev(us[:-1], cinterp, der = 0)
+
+  ### curvature along the points
+  dx, dy = splev(us[:-1], cinterp, der = 1)
+  d2x, d2y = splev(us[:-1], cinterp, der = 2)
+  k = (dx * d2y - dy * d2x)/np.power(dx**2 + dy**2, 1.5);
+  
+  return k;
+  
+
+def head_tail_from_contour_discrete(contour, delta = 0.3, max_curvature = -0.5, with_index = False,
+                                    verbose = False, save = None, image = None):
   """Detect candidates for head an tail positions along a contour
   
   Arguments:
-    contours (Curve or nx2 array): contour as curve or points
-    ncontour (int): number of samples points in the contour
+    contours (Curve or nx2 array): contour as curve or points (assumed to be closed countour[0] = contour[-1])
     delta (float): min height of peak in curvature to detect the head
-    smooth (float): smoothing to use for the countour before peak detection
+    max_curvature (float or None): the peak should have at least a curvature less than this
     with_index (bool): return with indices of high curvature points
     verbose (bool): plot results
     save (str or None): save result plot to this file
@@ -1612,17 +1874,31 @@ def head_tail_from_contour_discrete(contour, ncontour = all, delta = 0.3, smooth
     contour = contour.values;
   
   # onlt detect heads on outer contour as ts very unlikely tofind it in inner one
-  if ncontour is all:
-    ncontour = contour.shape[0];
+  #if ncontour is all:
+  #  ncontour = contour.shape[0];
   
-  cinterp, u = splprep(contour.T, u = None, s = smooth, per = 1) 
-  us = np.linspace(u.min(), u.max(), ncontour)
-  x, y = splev(us[:-1], cinterp, der = 0)
+  #cinterp, u = splprep(contour.T, u = None, s = smooth, per = 1) 
+  #us = np.linspace(u.min(), u.max(), ncontour)
+  #x, y = splev(us[:-1], cinterp, der = 0)
 
   ### curvature along the points
-  dx, dy = splev(us[:-1], cinterp, der = 1)
-  d2x, d2y = splev(us[:-1], cinterp, der = 2)
-  k = (dx * d2y - dy * d2x)/np.power(dx**2 + dy**2, 1.5);
+  #dx, dy = splev(us[:-1], cinterp, der = 1)
+  #d2x, d2y = splev(us[:-1], cinterp, der = 2)
+  #k = (dx * d2y - dy * d2x)/np.power(dx**2 + dy**2, 1.5);
+
+  ### curvature as angle between subsequent segments
+  
+  #vectors along center line
+  xyvec = np.diff(np.vstack([contour, contour[1]]), axis = 0);
+  
+  k = np.arctan2(xyvec[:-1,0], xyvec[:-1,1]) - np.arctan2(xyvec[1:,0], xyvec[1:,1]);
+  k = np.mod(k + np.pi, 2 * np.pi) - np.pi;
+  
+  k = np.hstack([k[-1], k]);
+  
+  
+  print(k.shape)
+  print(contour.shape)
   
   ### find tail / head via peak detection
   #pad k to detect peaks on both sides
@@ -1634,7 +1910,14 @@ def head_tail_from_contour_discrete(contour, ncontour = all, delta = 0.3, smooth
   if kpeaks.shape[0] > 0:  
     kpeaks = kpeaks[kpeaks[:,0] < k.shape[0],:];
     idx = np.asarray(kpeaks[:,0], dtype = int);
-    peaks = np.vstack([x[idx], y[idx]]).T;
+    
+    if max_curvature is not None:
+      idk = -kk[idx] < max_curvature;
+      kpeaks = kpeaks[idk];
+      idx = idx[idk];
+  
+    print(kk[idx]);
+    peaks = np.vstack([contour[idx,0], contour[idx,1]]).T;
   else:
     peaks = np.zeros((0,2));
     idx = np.zeros(0,dtype = int);
@@ -1645,8 +1928,8 @@ def head_tail_from_contour_discrete(contour, ncontour = all, delta = 0.3, smooth
     if image is not None:
       plt.subplot(1,2,1)
       plt.imshow(image, cmap = 'gray') 
-      plt.plot(contour[:,0], contour[:,1])
-      plt.plot(x,y);
+      plt.plot(contour[:,0], contour[:,1], 'r')
+      plt.plot(contour[0,0], contour[0,1], '.g', markersize = 16)
       if len(peaks)> 0:
         plt.scatter(peaks[:,0], peaks[:,1], c = 'm', s = 20);
       plt.title('contour dectection')
@@ -1658,7 +1941,7 @@ def head_tail_from_contour_discrete(contour, ncontour = all, delta = 0.3, smooth
       plt.scatter(kpeaks[:,0], -kpeaks[:,1], c = 'm', s= 40);
     plt.title('curvature')
     
-    if isinstance(save, basestring):
+    if isinstance(save, str):
       fig = plt.gcf();
       fig.savefig(save);
   
@@ -1935,6 +2218,7 @@ def distance_shape_to_contour_discrete(left, right, normals, contour,
 ### Tests
 
 def test():
+  from importlib import reload
   import numpy as np
   import matplotlib.pyplot as plt
   import worm.geometry as wgeo
@@ -1970,8 +2254,10 @@ def test():
   ### Image analysis  
   reload(wgeo)
   import analysis.experiment as exp;
-  img = exp.load_img(t = 100000);
-  wgeo.shape_from_image(img, npoints = 15, verbose = True)
+  img = exp.load_img(t = 500000);
+  
+  plt.figure(1); plt.clf();
+  wgeo.shape_from_image(img, npoints = 25, verbose = True)
   
   
   ### Contour detection
@@ -2005,6 +2291,7 @@ def test():
   
   ### Self occlusions
   import worm.model as wm;
+  from importlib import reload
   reload(wgeo)
   nn = 20;
   w = wm.WormModel(theta = np.hstack([np.linspace(0.1, 0.8, nn)*13, 13* np.linspace(0.9, 0.1, nn+1)]) , length = 150);

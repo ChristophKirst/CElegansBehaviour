@@ -1,7 +1,7 @@
 """
 Base Data Class for C-elegans Worm Data
 
-Handles access to the experimental data set, extends base Data calss form the tagged analysis framework
+Handles access to the experimental data set, extends base Data class form the tagged analysis framework
 """
 
 __license__ = 'MIT License <http://www.opensource.org/licenses/mit-license.php>'

@@ -55,7 +55,7 @@ def GetRadar(dt):
     if not hasattr (GetRadar, "posp"):
         GetRadar.posp = 0
 
-    if GetRadar.posp  > 10:
+    if GetRadar.posp  > 10000:
       vel = 0;
     else:
       vel = 100  + .5 * randn()

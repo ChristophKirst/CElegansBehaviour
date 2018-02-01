@@ -14,20 +14,18 @@ import time
 import worm.model as aw;
 
 
+#%%
+
 ### Test simple shape properties 
 reload(aw)
 #ws = aw.WormModel(theta = 0.1, width = 10 * (1 - np.exp(-0.1 * (21 - np.abs(2* (np.arange(20)+1) - 21)))));
 ws = aw.WormModel(width = None, length = 80, orientation = 2.1);
 #ws.widen(0.5);
 
-
-
 plt.figure(1); plt.clf();
 plt.subplot(1,2,1);
 ws.plot()
 plt.axis('equal')
-
-
 plt.xlim(0, 151);
 plt.ylim(0, 151);
 plt.subplot(1,2,2);
@@ -35,9 +33,11 @@ ws.plot(npoints = 2*ws.npoints+1)
 plt.xlim(0, 151);
 plt.ylim(0, 151);
 plt.axis('equal')
+plt.draw()
 
 
-# test theta forwad model
+
+#%% test theta forwad model
 reload(aw);
 nn = 21;
 ws = aw.WormModel(theta=np.ones(nn) * np.pi, width = None, length = 80, orientation = 0, xy = [0,0]);

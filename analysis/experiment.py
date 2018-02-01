@@ -24,16 +24,17 @@ import scipy.ndimage.filters as filters
 ### File locations
 ############################################################################      
 
-base_directory = '/home/ckirst/Science/Projects/CElegans/';
+base_directory = '/home/ckirst/Science/Projects/CElegans';
 """Base Directory"""
-
-#chekc for mounted data
 if os.path.ismount('/run/media/ckirst/CElegans_N2'): # N2 data set
-  base_directory = '/run/media/ckirst/CElegans_N2/CElegansBehaviour/';
+  base_directory = '/run/media/ckirst/CElegans_N2/CElegansBehaviour';
 
-
-data_directory = os.path.join(base_directory, 'Experiment/Data');
+  
+data_directory = os.path.join(base_directory, 'Experiment/Data_XY');
 """Experiment directory with the numpy data"""
+
+image_directory = os.path.join(data_directory, "Images");
+
 
 raw_data_directory = os.path.join(base_directory, 'Experiment/RawData');
 """Experiment directory with the raw data"""
@@ -69,9 +70,9 @@ def filename(strain = 'n2', dtype = 'xy', wid = all):
     raise RuntimeError('cannot determine data type %s' % dtype);
     
   if dtype == 'img':
-    fn = os.path.join('Images', fn);
-  
-  return os.path.join(data_directory, fn);  
+    return os.path.join(image_directory, fn);
+  else:
+    return os.path.join(data_directory, fn);  
 
  
 ############################################################################

@@ -5,6 +5,10 @@ Created on Tue Oct 25 01:18:39 2016
 @author: ckirst
 """
 
+#%%
+
+import worm.geometry as wgeo
+
 reload(wgeo)
 
 

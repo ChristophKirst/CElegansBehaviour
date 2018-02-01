@@ -305,12 +305,6 @@ def plot_hierarchical_cluster(distances, clustering = None, linkage_kwargs = {'m
 
 
 
-
-
-
-
-
-
 from matplotlib.mlab import PCA
 from mpl_toolkits.mplot3d import Axes3D
 

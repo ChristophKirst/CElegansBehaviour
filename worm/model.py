@@ -2,7 +2,7 @@
 """
 Module to model Worm shapes and movements
 
-The WormModel class models the main features of the worm shape and
+The WormModel class models the main features of the worm posture and
 does inference of the worm shape from images or movies
 
 The worm is parameterized by:
@@ -38,7 +38,7 @@ class WormModel(object):
   
   def __init__(self,  center = None, width = None, 
                xy = [75, 75], length = 50,
-              npoints = 21):
+               npoints = 21):
     """Constructor of WormModel
     
     Arguments:
@@ -211,13 +211,13 @@ class WormModel(object):
     #self.length = wormgeo.length_from_center_discrete(self.center);
     
   def from_image(self, image, sigma = 1, absolute_threshold = None, threshold_factor = 0.95, 
-                       ncontour = 100, delta = 0.3, smooth = 1.0, nneighbours = 4,
+                       ncontour = 100, delta = 0.3, smooth = 1.0,
                        verbose = False, save = None):
     
     success, center, left, right, width = wormgeo.shape_from_image(image, 
                              sigma = sigma, absolute_threshold = absolute_threshold,
                              threshold_factor = threshold_factor, ncontour = ncontour, 
-                             delta = delta, smooth = smooth, nneighbours = nneighbours,
+                             delta = delta, smooth = smooth,
                              npoints = self.npoints, 
                              verbose = verbose, save = save);
     
@@ -588,14 +588,14 @@ class WormModel(object):
   ############################################################################
   ### Visualization
   
-  def plot(self, image = None, color = None, ccolor = 'black', lcolor = 'green', rcolor = 'red', ax = None, cmap = 'viridis'):
+  def plot(self, image = None, color = None, ccolor = 'black', lcolor = 'green', rcolor = 'red', ax = None, cmap = 'nipy_spectral'):
     xyl, xyr, xym = self.shape(with_center = True);
     if ax is None:
       ax = plt.gca();
     if color is not None:
       ccolor = color; lcolor = color; rcolor = color;
     if image is not None:
-      ax.imshow(image, cmap = cmap);
+      ax.imshow(image, cmap = cmap, interpolation = 'none');
     ax.plot(xyl[:,0], xyl[:,1], lcolor);
     ax.scatter(xyl[:,0], xyl[:,1], c = lcolor);
     ax.plot(xyr[:,0], xyr[:,1], rcolor);

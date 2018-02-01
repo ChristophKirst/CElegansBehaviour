@@ -167,7 +167,7 @@ def test():
   plt.axis('equal')
   
 
-  # test line segments deparated by nans
+  # test line segments separated by nans
   import numpy as np
   import matplotlib.pyplot as plt;
   import interpolation.intersections as ii;

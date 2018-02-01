@@ -1,60 +1,71 @@
+# -*- coding: utf-8 -*-
+"""
+Peak detection from Scott and Andrews
+"""
+
+
 import sys
-from numpy import NaN, Inf, arange, isscalar, asarray, array
+import numpy as np
+
 
 def find_peaks(v, delta, x = None):
+  "Peak detection algortihm by Scott and Andrews"""
+  if x is None:
+      x = np.arange(len(v))
   
-    maxtab = []
-    #mintab = []
-       
-    if x is None:
-        x = arange(len(v))
-    
-    v = asarray(v)
-    
-    if len(v) != len(x):
-        sys.exit('Input vectors v and x must have same length')
-    
-    if not isscalar(delta):
-        sys.exit('Input argument delta must be a scalar')
-    
-    if delta <= 0:
-        sys.exit('Input argument delta must be positive')
-    
-    mn, mx = Inf, -Inf
-    #mnpos = NaN;
-    mxpos = NaN; #, NaN
-    
-    lookformax = True
-    
-    for i in arange(len(v)):
-        this = v[i]
-        if this > mx:
-            mx = this
-            mxpos = x[i]
-        if this < mn:
-            mn = this
-            #mnpos = x[i]
-        
-        if lookformax:
-            if this < mx-delta:
-                maxtab.append((mxpos, mx))
-                mn = this
-                #mnpos = x[i]
-                lookformax = False
-        else:
-            if this > mn+delta:
-                #mintab.append((mnpos, mn))
-                mx = this
-                mxpos = x[i]
-                lookformax = True
+  v = np.asarray(v)
+  
+  if len(v) != len(x):
+      sys.exit('Input vectors v and x must have same length')
+  
+  if not np.isscalar(delta):
+      sys.exit('Input argument delta must be a scalar')
+  
+  if delta <= 0:
+      sys.exit('Input argument delta must be positive')
+  
+  mn, mx = np.inf, -np.inf
+  #mnpos = NaN;
+  mxpos = np.nan; #, NaN
+  
+  lookformax = True
+  
+  maxid = [];
+  maxvalue = [];
+  for i in range(len(v)):
+      this = v[i]
+      if this > mx:
+          mx = this
+          mxpos = x[i]
+      if this < mn:
+          mn = this
+          #mnpos = x[i]
+      
+      if lookformax:
+          if this < mx-delta:
+              maxid.append(mxpos);
+              maxvalue.append(mx);
+              mn = this
+              #mnpos = x[i]
+              lookformax = False
+      else:
+          if this > mn+delta:
+              #mintab.append((mnpos, mn))
+              mx = this
+              mxpos = x[i]
+              lookformax = True
 
-    return array(maxtab) #, array(mintab)
+
+  return np.asarray(maxid, dtype = int), np.asarray(maxvalue, dtype = v.dtype);
 
 if __name__=="__main__":
-    from matplotlib.pyplot import plot, scatter, show
+    import matplotlib.pyplot as plt
+    import signalprocessing.peak_detection as pd;
+    reload(pd);
     series = [0,0,0,2,0,0,0,-2,0,0,0,2,0,0,0,-2,0]
-    maxtab = find_peaks(series,.3)
-    plot(series)
-    scatter(array(maxtab)[:,0], array(maxtab)[:,1], color='blue')
-    #scatter(array(mintab)[:,0], array(mintab)[:,1], color='red')
-    show()
+    i,v = pd.find_peaks(series,.3)
+    
+    plt.figure(1); plt.clf();
+    plt.plot(series)
+    plt.scatter(i, v, color='blue', s= 50)
+    plt.draw()

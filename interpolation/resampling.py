@@ -12,7 +12,7 @@ import numpy as np
 from scipy.interpolate import splprep,splrep, splev
 
 
-def resample_nd(curve, npoints, smooth = 0, periodic = False, derivative = 0):
+def resample_nd(curve, npoints = None, smooth = 0, periodic = False, derivative = 0, order = 5, iterations = 1):
   """Resample n points using n equidistant points along a curve
   
   Arguments:
@@ -24,16 +24,16 @@ def resample_nd(curve, npoints, smooth = 0, periodic = False, derivative = 0):
   Returns:
     (nxd array): resampled equidistant points
   """
-    
-  cinterp, u = splprep(curve.T, u = None, s = smooth, per = periodic);
-  if npoints is all:
-    npoints = curve.shape[0];
-  us = np.linspace(u.min(), u.max(), npoints)
-  curve = splev(us, cinterp, der = derivative);
-  return np.vstack(curve).T;
+  if npoints is None or npoints is all:
+    npoints = curve.shape[0];  
+  for i in range(iterations):  
+    cinterp, u = splprep(curve.T, u = None, s = smooth, per = periodic, k = order);
+    us = np.linspace(u.min(), u.max(), npoints)
+    curve = np.vstack(splev(us, cinterp, der = derivative)).T;
+  return curve;
 
 
-def resample_1d(data, npoints, smooth = 0, periodic = False, derivative = 0):
+def resample_1d(data, npoints = None, smooth = 0, periodic = False, derivative = 0, order = 5, iterations = 0):
   """Resample 1d data using n equidistant points
   
   Arguments:
@@ -45,16 +45,18 @@ def resample_1d(data, npoints, smooth = 0, periodic = False, derivative = 0):
   Returns:
     (array): resampled data points
   """
-  
-  x = np.linspace(0, 1, data.shape[0]);
-  dinterp = splrep(x, data, s = smooth, per = periodic);
-  if npoints is all:
+  if npoints is None or npoints is None:
     npoints = data.shape[0];
-  x2 = np.linspace(0, 1, npoints);
-  return splev(x2, dinterp, der = derivative)
+
+  u0 = np.linspace(0, 1, data.shape[0]);
+  us = np.linspace(0, 1, npoints);
+  for i in range(iterations):
+    dinterp = splrep(u0, data, s = smooth, per = periodic, k = 5);
+    data = splev(us, dinterp, der = derivative);
+  return data;
 
 
-def resample(curve, npoints, smooth = 0, periodic = False, derivative = 0):
+def resample(curve, npoints = None, smooth = 0, periodic = False, derivative = 0, order = 5, iterations = 1):
   """Resample n points using n equidistant points along a curve
   
   Arguments:
@@ -67,9 +69,9 @@ def resample(curve, npoints, smooth = 0, periodic = False, derivative = 0):
     (nxd array): resampled equidistant points
   """
   if curve.ndim > 1:
-    return resample_nd(curve, npoints, smooth = smooth, periodic = periodic, derivative = derivative);
+    return resample_nd(curve, npoints, smooth = smooth, periodic = periodic, derivative = derivative, order = order, iterations = iterations);
   else:
-    return resample_1d(curve, npoints, smooth = smooth, periodic = periodic, derivative = derivative);
+    return resample_1d(curve, npoints, smooth = smooth, periodic = periodic, derivative = derivative, order = order, iterations = iterations);
 
 
 

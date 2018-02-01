@@ -12,7 +12,7 @@ __docformat__ = 'rest'
 
 import numpy as np
 import networkx as nx
-from mayavi import mlab
+#from mayavi import mlab
 
 
 def ensure_zero_border(skeleton):
@@ -157,7 +157,7 @@ def skeleton_to_nx_graph(skeleton):
   """
   
   ids,nh = skeleton_to_list(skeleton, with_neighborhoods = True);
-  print 'ids done...'; 
+  print('ids done...'); 
  
   if len(ids) == 0:
      return nx.Graph();
@@ -169,7 +169,7 @@ def skeleton_to_nx_graph(skeleton):
     g = nx.Graph();
     for i,pos in enumerate(ids):
       if i % 500 == 0:
-          print '%d/%d nodes constructed...' % (i, len(ids));
+          print('%d/%d nodes constructed...' % (i, len(ids)));
       p = tuple(pos);
       g.add_node(p);
       posnh = np.where(nh[i]);
@@ -178,8 +178,10 @@ def skeleton_to_nx_graph(skeleton):
     return g;
 
 
-
-import graph_tool as gt;
+try:
+  import graph_tool as gt;
+except:
+  pass
 
 
 def skeleton_to_gt_graph(skeleton, with_coordinates = True, verbose = True):
@@ -202,12 +204,12 @@ def skeleton_to_gt_graph(skeleton, with_coordinates = True, verbose = True):
     
   # create graph
   if verbose:
-    print 'creating graph...';
+    print('creating graph...');
   g = gt.Graph(directed = False);
   g.add_vertex(nnodes);
   if with_coordinates:
       if verbose:
-        print 'creating coordinate properties...'
+        print('creating coordinate properties...')
       vp = g.new_vertex_property('int', coords[:,0]);
       g.vertex_properties['x'] = vp;
       vp = g.new_vertex_property('int', coords[:,1]);
@@ -218,7 +220,7 @@ def skeleton_to_gt_graph(skeleton, with_coordinates = True, verbose = True):
   
   for i, pos in enumerate(coords):
     if verbose and i % 1000 == 0:
-      print '%d/%d nodes constructed...' % (i, len(coords));
+      print('%d/%d nodes constructed...' % (i, len(coords)));
     #print 'nh'
     #print nh[i]
     posnh = np.transpose(np.where(nh[i]));
@@ -370,6 +372,7 @@ def test2():
     
 
 def test():
+  from importlib import reload
   import numpy as np
   from mayavi import mlab
   import skeleton_graph as sg
@@ -378,7 +381,7 @@ def test():
   skel = np.load('TestData/skeleton_big.npy');
   skel = skel[:150,:150, :150];
   skel = sg.ensure_zero_border(skel);
-  print skel.shape, skel.sum()
+  print(skel.shape, skel.sum())
   
   mlab.figure()
   g = sg.skeleton_to_nx_graph(skel);
