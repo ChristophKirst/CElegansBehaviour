@@ -27,9 +27,9 @@ nstrains = 16;
 ntot = 16 * 5 + 14;
 
 strains = ['n2'] * nstrains;
-strains.extend(['npr1'] * nstrains);
-strains.extend(['tdc1'] * nstrains);
 strains.extend(['tph1'] * nstrains);
+strains.extend(['tdc1'] * nstrains);
+strains.extend(['npr1'] * nstrains);
 strains.extend(['daf7'] * 14);
 strains.extend(['cat2'] * nstrains);
 
@@ -37,7 +37,7 @@ strains.extend(['cat2'] * nstrains);
 
 # roamng fraction
 wids= [];
-for s in ['n2','npr1','tdc1', 'tph1','daf7','cat2']:
+for s in ['n2','tph1','tdc1', 'npr1','daf7','cat2']:
   roam = exp.load(strain = s, wid = all, dtype = 'speed');
   means = np.array([np.nanmean(r) for r in roam]);
   ids = np.argsort(means);
@@ -123,7 +123,7 @@ times[16+14,:] += 3500;
 #%%
 
 reload(v);
-fig = plt.figure(1, figsize = (4.9,3), dpi = 300, facecolor = 'w'); plt.clf();
+fig = plt.figure(1, figsize = (3,2.5), dpi = 300, facecolor = 'w'); plt.clf();
 plt.subplots_adjust(left=0.015, right=0.985, top=0.955, bottom=0.035, hspace = 0.075, wspace = 0.075)
 
 
@@ -202,12 +202,12 @@ for i,s,w in zip(range(nworms),strains, wids):
 #%%
 
 import matplotlib.colors as mcols;
-colors = dict(mcols.BASE_COLORS, **mcols.CSS4_COLORS)
+colors = mcols.cnames;
 
 tops = gsAll.get_grid_positions(fig)[1];
 lefts = gsAll.get_grid_positions(fig)[2];
 
-for i,s in enumerate(['n2','npr-1','tdc-1', 'tph-1','daf-7','cat-2']):
+for i,s in enumerate(['N2','tph-1','tdc-1', 'npr-1','daf-7','cat-2']):
   if i > 0:
     fs = 'italic';
   else:
@@ -221,7 +221,7 @@ for i,s in enumerate(['n2','npr-1','tdc-1', 'tph-1','daf-7','cat-2']):
 
 #%%
 
-
+fname = os.path.join('/home/ckirst/Science/Projects/CElegans/Analysis/WormBehaviour/Movies', 'worm_life_genotypes_all_%s_%d.mov' % (aligned, traj_hist));
 #times_short = times_all[:, :300];
 
 if aligned == 'aligned':
@@ -238,14 +238,11 @@ else:
 a = v.WormAnimation(figure = fig, plots = plots, times = times,
                     time_stamp = True,
                     time_stamp_text = time_text,
-                    time_stamp_font_size = 8,
-                    time_stamp_position = (0.82, 0.05),
-                    save = fname, fps = 30, dpi = 300);
+                    time_stamp_font_size = 6,
+                    time_stamp_position = (0.515, 0.05),
+                    save = fname, fps = 30, dpi = 800);
 
 fig.show()
-
-#%%
-a.time_stamp.set_position((0.54, 0.05))
 
 
 #%%
