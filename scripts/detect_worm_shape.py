@@ -43,7 +43,7 @@ movie_name = 'CAM800_2017-01-30-171215'
 #movie_name = 'CAM819_2017-01-30-172249'
 
 data_dir = '/home/ckirst/Data/Science/Projects/CElegans/Experiment/Movies/'
-data_dir = '/home/ckirst/Movies'
+data_dir = '/home/ckirst/Science/Data/CElegans/'
 
 data_name = '%s_%s_%s.npy' % (movie_name, '%d', '%s');
 
@@ -106,18 +106,16 @@ else:
   #data_info  = np.load(data_info_file);  
 
 
-#%%
-
 
 #%%
 reload(wgn);
-
+ 
 import warnings
 warnings.filterwarnings("ignore")
 
 verbose = True;
 
-#frame_batch = 1000;
+frame_batch = 1000;
 frame_batch = 1;
 frame_ids = range(0, n_frames_total, frame_batch);
 #frame_ids = failed;
@@ -126,13 +124,20 @@ frame_ids = range(0, n_frames_total, frame_batch);
 #frame_ids = [320579-20000-10];
 #frame_ids = [524431];
 #frame_ids = [514425];
-#frame_ids = [320579-12];
+#frame_ids = [320579-6];
 #frame_ids = [494428+2];
 #frame_ids = [474424];
-frame_ids = [604384];
-frame_ids = [520049];
-frame_ids = [521277];
+#frame_ids = [604384];
+#frame_ids = [520049];
+#frame_ids = [521277-2];
+#frame_ids = [520574];
+frame_ids = [93900];
+#frame_ids = [70900];
+#frame_ids = [80900];
+#frame_ids = [310500];
 
+#frame_ids = [200900];
+#frame_ids = [300900];
 
 parallel = True;
 parallel = False;
@@ -154,7 +159,7 @@ def analyze_shape(fid):
   contour = pmm.open_memmap(data_contour_file, arange = (fid, fid2), mode = 'r+');
   
   #smooth
-  print('processing %d / %d' % (fid, n_frames_total));
+  #print('processing %d / %d' % (fid, n_frames_total));
 
   for i,f in enumerate(range(fid, fid2)):
     #print('success status: %d' % shape_info[i]['success']);   
@@ -167,12 +172,17 @@ def analyze_shape(fid):
     #else:
     head_tail_hint = None;
     #print i, head_tail_hint
+    
+    thres = 132.0 + f * 1.0/n_frames_total * (140-132);
+    thres = 132;    
+    print thres
+    
         
     if verbose:
       plt.clf();
     #try:
-    res = wgn.shape_from_image(blur, absolute_threshold = 136, sigma = None,
-                               smooth_head_tail = 10, smooth_left_right = 5.0, smooth_center = 10.0, npoints = n_points, ncontour = n_contour, center_offset = 1,
+    res = wgn.shape_from_image(blur, absolute_threshold = thres, sigma = None,
+                               smooth_head_tail = 10.0, smooth_left_right = 5.0, smooth_center = 5.0, npoints = n_points, ncontour = n_contour, center_offset = 1,
                                head_tail_hint = head_tail_hint,
                                verbose = verbose);
     #print(res[0]);
@@ -222,7 +232,7 @@ print('failed: %d' % len(failed));
 fids = np.arange(6) + 516000;
 #fids = failed[10871];
 fids = 534426-60000;
-fids = failed[65];
+fids = failed[-5];
 
 fids = range(fids-6, fids+6);
 

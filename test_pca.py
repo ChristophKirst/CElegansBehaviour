@@ -130,7 +130,10 @@ pcas = results.Y;
 #%%
 #import worm.model as wmod
 
-plt.figure(1); plt.clf();
+fig = plt.figure(1); plt.clf();
+ax = fig.add_subplot(1,1,1);
+
+ax.set_color_cycle([plt.cm.gray(i) for i in np.linspace(0,1,50)])
 
 k,m = 6,5
 for i in range(3000):
@@ -141,6 +144,17 @@ for i in range(3000):
   #c = np.reshape(pcas[i], (2,-1))
   plt.plot(*c.T);
 
+
+plt.xlim(-65,65);
+plt.ylim(-65,65);
+plt.axis('equal')
+
+cax = plt.gca();
+aax = cax.axes
+aax.get_xaxis().set_visible(False);
+aax.get_yaxis().set_visible(False);
+
+plt.tight_layout()
 
 #%%
 plt.figure(1); plt.clf();

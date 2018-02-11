@@ -39,8 +39,8 @@ def get_movie_files(name, check = True, verbose = True):
   
   try:
     #reader = iio.get_reader(movie_files[-1]);
-    cv2.VideoCapture(movie_files[-1])
-    ret, frame = r.read();
+    reader = cv2.VideoCapture(movie_files[-1])
+    ret, frame = reader.read();
     if ret is False:
       if verbose:
         print('Warning: last movie file seems corrupted!');  

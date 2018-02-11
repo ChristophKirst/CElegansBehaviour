@@ -282,7 +282,7 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
   
   ### smooth image
   if sigma is not None:
-    imgs = cv2.GaussianBlur(np.asarray(image, dtpye = float), ksize = (sigma, sigma), sigmaX = 0);
+    imgs = cv2.GaussianBlur(np.asarray(image, dtype = float), ksize = (sigma, sigma), sigmaX = 0);
   else:
     imgs = image;
    
@@ -369,7 +369,7 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
       if hrchy[outer[imin]].sum() > 0:
         status += 10;
         
-  print status, len(pts)
+  #print status, len(pts)
   
   ### interpolate outer contour
   nextra = min(len(pts)-1, 20); # pts[0]==pts[-1] !!
@@ -520,13 +520,13 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
     #print 'max k at %s' % str(imax)
     #plt.figure(11); plt.clf();
     plt.subplot(2,3,1)
-    plt.imshow(image, interpolation ='nearest')
+    plt.imshow(image, interpolation ='none')
     plt.title('raw image');
     plt.subplot(2,3,2)
-    plt.imshow(imgs)
+    plt.imshow(imgs, interpolation ='none')
     plt.title('smoothed image');
     plt.subplot(2,3,3)
-    plt.imshow(imgs, cmap = 'gray')
+    plt.imshow(imgs, cmap = 'gray', interpolation ='none')
     plt.contour(imgs, levels = [level])
     plt.title('contour dectection')
     
@@ -540,7 +540,7 @@ def shape_from_image(image, sigma = 1, absolute_threshold = None, threshold_fact
     
     # shape detection
     plt.subplot(2,3,5)
-    plt.imshow(image, cmap = 'gray', interpolation = 'nearest')
+    plt.imshow(image, cmap = 'gray', interpolation = 'none')
     
     left1, right1 = wgeo.shape_from_center_discrete(center, width);
     plt.plot(left1[:,0]  , left1[:,1]  , 'r', linewidth= 2)
